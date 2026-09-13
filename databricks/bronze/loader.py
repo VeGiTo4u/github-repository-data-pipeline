@@ -30,7 +30,7 @@ def run_bronze_load(
     """
     raw_df = spark.read.json(s3_raw_path)
 
-    if raw_df.rdd.isEmpty():
+    if raw_df.isEmpty():
         print(f"[bronze] SKIP {resource_type}: no raw files at {s3_raw_path}")
         return
 
