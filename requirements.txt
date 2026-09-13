@@ -1,0 +1,4 @@
+# Core ingestion dependencies
+requests>=2.31.0
+boto3>=1.34.0
+python-dotenv>=1.0.0
