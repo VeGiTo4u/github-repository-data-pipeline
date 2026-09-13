@@ -37,7 +37,7 @@ def run_bronze_load(
     bronze_df = (
         raw_df
         .withColumn("_bronze_ingest_ts", current_timestamp())
-        .withColumn("_source_file", input_file_name())
+        .withColumn("_source_file", col("_metadata.file_path"))
         .withColumn("_raw_s3_uri", col("lineage.source_s3_uri"))
         .withColumn("_extraction_run_id", col("lineage.extraction_run_id"))
         .withColumn("_ingestion_date", col("lineage.ingestion_date"))
