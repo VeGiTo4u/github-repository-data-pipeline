@@ -4,7 +4,7 @@ No business logic, no DQ checks. Bronze is a faithful landing zone per Medallion
 Row counts come from Delta Log transaction metrics, not .count().
 """
 
-from pyspark.sql.functions import current_timestamp, col, input_file_name
+from pyspark.sql.functions import current_timestamp, col, get_json_object
 from delta.tables import DeltaTable
 
 from databricks.bronze.bronze_config import BRONZE_REGISTRY
@@ -28,7 +28,7 @@ def run_bronze_load(
         ingestion_date: e.g. 2026-09-13
         spark:          Active SparkSession (Databricks runtime).
     """
-    raw_df = spark.read.json(s3_raw_path)
+    raw_df = spark.read.text(s3_raw_path)
 
     if raw_df.isEmpty():
         print(f"[bronze] SKIP {resource_type}: no raw files at {s3_raw_path}")
@@ -37,11 +37,15 @@ def run_bronze_load(
     bronze_df = (
         raw_df
         .withColumn("_bronze_ingest_ts", current_timestamp())
-        .withColumn("_source_file", col("_metadata.file_path"))
-        .withColumn("_raw_s3_uri", col("lineage.source_s3_uri"))
-        .withColumn("_extraction_run_id", col("lineage.extraction_run_id"))
-        .withColumn("_ingestion_date", col("lineage.ingestion_date"))
-        .withColumn("_payload_checksum", col("lineage.payload_checksum"))
+        .withColumn("_source_file", get_json_object(col("value"), "$.lineage.source_s3_uri"))
+        .withColumn("_raw_s3_uri", get_json_object(col("value"), "$.lineage.source_s3_uri"))
+        .withColumn("_source_endpoint", get_json_object(col("value"), "$.lineage.source_endpoint"))
+        .withColumn("_ingestion_timestamp", get_json_object(col("value"), "$.lineage.ingestion_timestamp").cast("timestamp"))
+        .withColumn("_extraction_run_id", get_json_object(col("value"), "$.lineage.extraction_run_id"))
+        .withColumn("_ingestion_date", get_json_object(col("value"), "$.lineage.ingestion_date"))
+        .withColumn("_payload_checksum", get_json_object(col("value"), "$.lineage.payload_checksum"))
+        .withColumn("data", get_json_object(col("value"), "$.data"))
+        .drop("value")
     )
 
     # Idempotent: replaceWhere on partition = same date re-run replaces, not appends
@@ -86,7 +90,7 @@ def run_all_bronze_loads(
 
     for resource_type, config in BRONZE_REGISTRY.items():
         s3_raw_path = f"s3://{bucket}/{config['raw_prefix']}/ingestion_date={ingestion_date}/"
-        s3_bronze_path = f"s3://{bucket}/{config['bronze_prefix']}"
+        s3_bronze_path = f"s3://{bucket}/bronze_v2/{resource_type}"
         bronze_table = config["table_name"].format(catalog=catalog, schema=schema)
 
         print(f"[bronze] Loading {resource_type}: {s3_raw_path} -> {s3_bronze_path}")
