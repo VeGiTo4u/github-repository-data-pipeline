@@ -90,7 +90,7 @@ def run_all_bronze_loads(
 
     for resource_type, config in BRONZE_REGISTRY.items():
         s3_raw_path = f"s3://{bucket}/{config['raw_prefix']}/ingestion_date={ingestion_date}/"
-        s3_bronze_path = f"s3://{bucket}/bronze_v2/{resource_type}"
+        s3_bronze_path = f"s3://{bucket}/bronze/{resource_type}"
         bronze_table = config["table_name"].format(catalog=catalog, schema=schema)
 
         print(f"[bronze] Loading {resource_type}: {s3_raw_path} -> {s3_bronze_path}")
