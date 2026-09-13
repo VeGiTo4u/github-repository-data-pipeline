@@ -97,3 +97,44 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - **Full S3 Admin access:** Easier to setup and allows automated cleanup. Rejected because it violates security best practices and increases the blast radius of a compromised or buggy ingestion script.
+
+---
+
+## 8. Databricks Serverless Compute Compatibility
+
+**Decision:** All PySpark code avoids RDD operations and uses only DataFrame-native APIs. Specifically, `raw_df.isEmpty()` instead of `raw_df.rdd.isEmpty()`, and `col("_metadata.file_path")` instead of `input_file_name()`.
+
+**Reason:**
+- Databricks Serverless runs on Spark Connect, which completely disables the RDD API (`PySparkNotImplementedError: rdd is not implemented`).
+- Unity Catalog blocks `input_file_name()` as a security measure to prevent leaking underlying cloud storage paths. The `_metadata.file_path` column is UC's sanctioned replacement.
+- These constraints were discovered during production deployment and are non-negotiable on Serverless + UC.
+
+**Alternatives Discussed:**
+- Using classic (non-serverless) clusters to avoid these restrictions. Rejected because Serverless eliminates cluster management overhead and cold-start delays, which outweighs the minor API adjustments.
+
+---
+
+## 9. Metadata-Driven Bronze Registry
+
+**Decision:** All Bronze resource types are defined in a single `BRONZE_REGISTRY` dictionary (`bronze_config.py`). Adding a new resource type requires one config entry and zero code changes.
+
+**Reason:**
+- Eliminates per-resource boilerplate (no `repositories.py`, `issues.py`, `pull_requests.py` — one `loader.py` handles them all).
+- The registry maps each resource type to its raw S3 prefix, bronze S3 prefix, and Unity Catalog table name. The generic loader iterates the registry and processes each entry identically.
+- Makes the pipeline trivially extensible — adding `commits` or `stargazers` later is a 5-line config addition.
+
+**Alternatives Discussed:**
+- One Python file per resource type with hardcoded paths. Rejected because it creates duplicated logic and increases the surface area for bugs when patterns change (e.g., adding a new audit column requires editing N files instead of one).
+
+---
+
+## 10. Airflow → Databricks Serverless Orchestration
+
+**Decision:** Airflow triggers Databricks notebooks via `DatabricksSubmitRunOperator` using the Jobs API 2.1 `tasks` array format (multi-task structure), not the legacy single `notebook_task` format.
+
+**Reason:**
+- Databricks Serverless compute requires the `tasks` array structure in the `runs/submit` API. The legacy single-task format returns `INVALID_PARAMETER_VALUE: One of job_cluster_key, new_cluster, or existing_cluster_id must be specified`.
+- The `tasks` array also future-proofs the pipeline for adding parallel Silver/Gold tasks within the same Databricks job submission.
+
+**Alternatives Discussed:**
+- Using `DatabricksRunNowOperator` with a pre-created job. Rejected for Phase 1 because `SubmitRunOperator` is simpler (no job setup in Databricks UI) and the notebook path + parameters are version-controlled in the DAG.

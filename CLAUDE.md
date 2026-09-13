@@ -73,3 +73,20 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Data Organization:** "Organize by how you query, not by how you ingest." The S3 `raw/` prefix is partitioned by resource type and date (`raw/{resource_type}/ingestion_date=.../{repo}.json`), making downstream scanning highly efficient.
 - **Rate Limit Budgeting:** GitHub API rate limits (5,000 req/hr) are a hard constraint. The pipeline uses cooperative throttling in the `GitHubClient`, Airflow Dynamic Task Mapping concurrency limits (`max_active_tasks=3`), and per-repo watermark tracking to survive API exhaustion and resume cleanly.
 - **Security:** Credentials must never be hardcoded or logged. Use Airflow Connections/Variables in production, and a `.env` file strictly for local development testing. IAM policies are explicitly least-privilege (e.g., no `s3:DeleteObject` for the ingestion user).
+
+**Bronze Layer (Medallion Architecture):**
+- **Metadata-Driven:** All 5 resource types (repositories, issues, pull_requests, releases, languages) are defined in `BRONZE_REGISTRY` (`databricks/bronze/bronze_config.py`). Adding a new resource = one config entry, zero code changes.
+- **No Business Logic in Bronze:** Bronze is a faithful landing zone. No DQ checks, no transformations, no filtering. Data Quality walls belong at Silver and Gold only.
+- **Audit Lineage Columns:** Every Bronze row carries `_bronze_ingest_ts`, `_source_file`, `_raw_s3_uri`, `_extraction_run_id`, `_ingestion_date`, `_payload_checksum`.
+- **External Tables:** Bronze tables are registered as Unity Catalog external tables with explicit `LOCATION` clauses pointing at S3 `bronze/` prefixes. Never use managed tables.
+
+**Databricks Serverless Constraints (MUST follow):**
+- **No RDDs:** Serverless runs Spark Connect which bans all `.rdd` operations. Use DataFrame-native APIs only (e.g., `df.isEmpty()` not `df.rdd.isEmpty()`).
+- **No `input_file_name()`:** Unity Catalog blocks this function. Use `col("_metadata.file_path")` instead.
+- **Jobs API 2.1 `tasks` array:** Serverless requires multi-task format in `runs/submit`. Never use the legacy single `notebook_task` at root level.
+- **Databricks Repos for code delivery:** Scripts are pulled via Databricks Repos (user manually syncs), not uploaded via DBFS or Volumes.
+
+**Airflow-Databricks Integration:**
+- **Connection:** `databricks_default` with `conn_type=databricks`, `login=token`, `password=<PAT>`. Set via Airflow CLI or UI, not `.env` (environment variable overrides are fragile with Docker).
+- **Variables:** `databricks_notebook_path`, `databricks_catalog`, `databricks_schema` stored in Airflow's internal database via CLI (`airflow variables set`).
+- **Operator:** `DatabricksSubmitRunOperator` with `tasks` array structure for Serverless compatibility.
