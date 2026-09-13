@@ -115,18 +115,23 @@ with DAG(
         databricks_conn_id="databricks_default",
         json={
             "run_name": "bronze_load_{{ ds }}",
-            "notebook_task": {
-                "notebook_path": Variable.get(
-                    "databricks_notebook_path",
-                    default_var="/Repos/default/Github-Repository-Data-Analysis/databricks/bronze/bronze_notebook",
-                ),
-                "base_parameters": {
-                    "s3_bucket": Variable.get("s3_bucket_name"),
-                    "catalog": Variable.get("databricks_catalog"),
-                    "schema": Variable.get("databricks_schema"),
-                    "ingestion_date": "{{ ds }}",
-                },
-            },
+            "tasks": [
+                {
+                    "task_key": "load_bronze",
+                    "notebook_task": {
+                        "notebook_path": Variable.get(
+                            "databricks_notebook_path",
+                            default_var="/Workspace/Repos/default/Github-Repository-Data-Analysis/databricks/bronze/bronze_notebook",
+                        ),
+                        "base_parameters": {
+                            "s3_bucket": Variable.get("s3_bucket_name"),
+                            "catalog": Variable.get("databricks_catalog"),
+                            "schema": Variable.get("databricks_schema"),
+                            "ingestion_date": "{{ ds }}",
+                        },
+                    },
+                }
+            ],
         },
     )
 
