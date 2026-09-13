@@ -11,6 +11,13 @@ x-airflow-common: &airflow-common
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
     AIRFLOW__WEBSERVER__SECRET_KEY: 'a_very_secret_key_for_airflow_logs'
     PYTHONPATH: /opt/airflow
+    
+    # Required for dbt tasks in the DAG
+    DATABRICKS_HOST: ${DATABRICKS_HOST:-}
+    DATABRICKS_TOKEN: ${DATABRICKS_TOKEN:-}
+    DATABRICKS_CATALOG: ${DATABRICKS_CATALOG:-}
+    DATABRICKS_SCHEMA: ${DATABRICKS_SCHEMA:-}
+    DATABRICKS_SQL_WAREHOUSE_HTTP_PATH: ${DATABRICKS_SQL_WAREHOUSE_HTTP_PATH:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -18,6 +25,7 @@ x-airflow-common: &airflow-common
     # Mount project packages so PythonOperator can import them
     - ../ingestion:/opt/airflow/ingestion
     - ../databricks:/opt/airflow/databricks
+    - ../dbt:/opt/airflow/dbt
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy

@@ -1,0 +1,76 @@
+version: 2
+
+models:
+  - name: int_repositories_validated
+    description: >
+      DQ-validated repositories. Full-population from staging view.
+      Records failing any DQ rule have is_quarantined = true and dq_failed_rules
+      lists which rules failed. Only clean records flow to the SCD2 snapshot.
+    columns:
+      - name: repository_id
+        tests: [not_null]
+        description: "Primary key — GitHub repository ID"
+      - name: is_quarantined
+        tests: [not_null]
+        description: "True if any DQ rule failed"
+      - name: dq_failed_rules
+        description: "Array of failed DQ rule names (empty if clean)"
+
+  - name: int_issues_validated
+    description: >
+      DQ-validated issues with high-water-mark incrementality.
+      Enriched with repository_id via join on repository_url.
+      Quarantined records are excluded from the SCD2 snapshot.
+    columns:
+      - name: issue_id
+        tests: [unique, not_null]
+        description: "Primary key — GitHub issue ID"
+      - name: repository_id
+        description: "Resolved repository ID from repository_url join"
+      - name: is_quarantined
+        tests: [not_null]
+        description: "True if any DQ rule failed"
+      - name: dq_failed_rules
+        description: "Array of failed DQ rule names (empty if clean)"
+
+  - name: int_pull_requests_validated
+    description: >
+      DQ-validated pull requests with high-water-mark incrementality.
+      Quarantined records are excluded from the SCD2 snapshot.
+    columns:
+      - name: pull_request_id
+        tests: [unique, not_null]
+        description: "Primary key — GitHub pull request ID"
+      - name: is_quarantined
+        tests: [not_null]
+        description: "True if any DQ rule failed"
+      - name: dq_failed_rules
+        description: "Array of failed DQ rule names (empty if clean)"
+
+  - name: int_releases_validated
+    description: >
+      DQ-validated releases. Full-population from staging view.
+      Flows directly to silver_releases (Type 1, no snapshot).
+    columns:
+      - name: release_id
+        tests: [unique, not_null]
+        description: "Primary key — GitHub release ID"
+      - name: is_quarantined
+        tests: [not_null]
+        description: "True if any DQ rule failed"
+      - name: dq_failed_rules
+        description: "Array of failed DQ rule names (empty if clean)"
+
+  - name: int_languages_validated
+    description: >
+      DQ-validated languages. Full-population from staging view.
+      Flows directly to silver_languages (Type 1, no snapshot).
+    columns:
+      - name: language
+        tests: [not_null]
+        description: "Programming language name"
+      - name: is_quarantined
+        tests: [not_null]
+        description: "True if any DQ rule failed"
+      - name: dq_failed_rules
+        description: "Array of failed DQ rule names (empty if clean)"

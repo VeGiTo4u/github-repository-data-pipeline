@@ -29,7 +29,7 @@ with DAG(
     max_active_runs=1,
     max_active_tasks=3,
     default_args=default_args,
-    tags=["github", "analytics", "phase1"],
+    tags=["github", "analytics", "phase1", "phase2"],
 ) as dag:
 
     def _extract_and_load_repo(repo: str, **context):
@@ -54,6 +54,8 @@ with DAG(
         github_token = Variable.get("GITHUB_TOKEN")
         s3_bucket = Variable.get("s3_bucket_name")
         run_id = context["run_id"]
+        # data_interval_end is the day the @daily run executes (not ds, which is yesterday)
+        ingestion_date = context["data_interval_end"].strftime("%Y-%m-%d")
 
         # --- per-repo watermark ---
         repo_slug = repo.replace("/", "_")
@@ -70,6 +72,7 @@ with DAG(
             github_token=github_token,
             s3_bucket=s3_bucket,
             since=since,
+            ingestion_date=ingestion_date,
         )
 
         # --- upload each resource file to S3 ---
@@ -127,7 +130,7 @@ with DAG(
                             "s3_bucket": Variable.get("s3_bucket_name"),
                             "catalog": Variable.get("databricks_catalog"),
                             "schema": Variable.get("databricks_schema"),
-                            "ingestion_date": "{{ ds }}",
+                            "ingestion_date": "{{ data_interval_end | ds }}",
                         },
                     },
                 }

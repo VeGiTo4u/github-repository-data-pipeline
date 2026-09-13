@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: stg_github_repositories
+    description: "Flattened repositories from Bronze, latest partition, deduped"
+    columns:
+      - name: repository_id
+        tests: [unique, not_null]
+
+  - name: stg_github_issues
+    description: "Flattened issues from Bronze, incremental high-water-mark, deduped"
+    columns:
+      - name: issue_id
+        tests: [unique, not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: stg_github_pull_requests
+    description: "Flattened pull requests from Bronze, incremental high-water-mark, deduped"
+    columns:
+      - name: pull_request_id
+        tests: [unique, not_null]
+      - name: updated_at
+        tests: [not_null]
+
+  - name: stg_github_releases
+    description: "Flattened releases from Bronze, latest partition, deduped"
+    columns:
+      - name: release_id
+        tests: [unique, not_null]
+
+  - name: stg_github_languages
+    description: "Languages unpivoted from Bronze map, latest partition"
+    columns:
+      - name: language
+        tests: [not_null]

@@ -138,3 +138,32 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - Using `DatabricksRunNowOperator` with a pre-created job. Rejected for Phase 1 because `SubmitRunOperator` is simpler (no job setup in Databricks UI) and the notebook path + parameters are version-controlled in the DAG.
+
+---
+
+## 11. Silver Layer Validation & Data Quality Framework
+
+**Decision:** The Silver layer introduces a dedicated `intermediate` validation layer between Staging and Snapshots/Marts. A centralized Jinja macro (`evaluate_dq_rules`) executes data quality checks, generating an `ARRAY<STRING>` of failed rules (`dq_failed_rules`) and a boolean flag (`is_quarantined`).
+
+**Reason:**
+- Prevents bad data from entering the SCD2 history (`silver_snapshots`), as snapshots filter out `is_quarantined = true`.
+- Allows downstream analysts to see the quarantined records in the `silver_*_current` marts via a `UNION ALL` pattern, rather than dropping them silently.
+- Centralizing DQ rules in a macro standardizes the approach and makes extending rules trivial.
+
+**Alternatives Discussed:**
+- **Silently dropping bad records:** Rejected because it removes visibility into ingestion or source API issues.
+- **Putting DQ checks in Staging:** Rejected because staging should remain a pure, lightweight flattening/typing view layer over Bronze.
+- **Using dbt tests to drop records:** dbt tests run *after* the tables are built and can alert, but they do not automatically quarantine rows mid-pipeline.
+
+---
+
+## 12. Staging Layer Simplicity
+
+**Decision:** The `staging` layer consists solely of lightweight SQL `VIEW`s that flatten nested JSON, typecast columns, and deduplicate records. High-water-mark incremental logic was moved from staging to the `intermediate` layer.
+
+**Reason:**
+- Keeps the raw-to-clean plumbing completely separate from business logic (watermarks, DQ).
+- Simplifies debugging: a staging view always shows the exact cleaned representation of the Bronze table.
+
+**Alternatives Discussed:**
+- **Incremental materialization in Staging:** Used initially but shifted to intermediate to ensure that any record evaluated for incrementality is also immediately subjected to DQ rules in the same physical table build.

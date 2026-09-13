@@ -80,6 +80,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Audit Lineage Columns:** Every Bronze row carries `_bronze_ingest_ts`, `_source_file`, `_raw_s3_uri`, `_extraction_run_id`, `_ingestion_date`, `_payload_checksum`.
 - **External Tables:** Bronze tables are registered as Unity Catalog external tables with explicit `LOCATION` clauses pointing at S3 `bronze/` prefixes. Never use managed tables.
 
+**Silver Layer (Medallion Architecture):**
+- **Pipeline Flow:** Staging (views) → Intermediate (validation/incrementality) → Snapshots (SCD2 history) → Silver Marts (presentation).
+- **Data Quality Framework:** A centralized macro (`evaluate_dq_rules`) applies rule checks in the `intermediate` layer. It generates `dq_failed_rules` (array) and `is_quarantined` (boolean).
+- **Quarantine Handling:** Bad records (`is_quarantined = true`) are strictly blocked from entering the SCD2 `silver_snapshots`. However, the final `silver_*_current` marts perform a `UNION ALL` of clean snapshot rows and quarantined intermediate rows so analysts can see the bad data without corrupting the historical tracking.
+- **Staging Simplicity:** Staging models are purely lightweight `VIEW`s (JSON flattening, typecasting). All incremental high-water-mark logic lives in the `intermediate` layer.
+- **External Tables:** Silver marts are also registered as Unity Catalog external tables via a dbt `post-hook` macro (`create_silver_external_table.sql`).
+
 **Databricks Serverless Constraints (MUST follow):**
 - **No RDDs:** Serverless runs Spark Connect which bans all `.rdd` operations. Use DataFrame-native APIs only (e.g., `df.isEmpty()` not `df.rdd.isEmpty()`).
 - **No `input_file_name()`:** Unity Catalog blocks this function. Use `col("_metadata.file_path")` instead.

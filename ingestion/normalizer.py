@@ -11,6 +11,7 @@ def build_lineage_envelope(
     extraction_run_id: str,
     s3_bucket: str,
     s3_key: str,
+    ingestion_date: str | None = None,
 ) -> dict:
     """Wraps a single GitHub API record in a lineage envelope for JSON Lines.
 
@@ -19,13 +20,14 @@ def build_lineage_envelope(
     """
     now = datetime.now(timezone.utc)
     payload_bytes = json.dumps(record, sort_keys=True).encode("utf-8")
+    date_str = ingestion_date or now.strftime("%Y-%m-%d")
 
     return {
         "data": record,
         "lineage": {
             "extraction_run_id": extraction_run_id,
             "ingestion_timestamp": now.isoformat(),
-            "ingestion_date": now.strftime("%Y-%m-%d"),
+            "ingestion_date": date_str,
             "source_endpoint": source_endpoint,
             "http_status": http_status,
             "api_rate_limit_remaining": rate_limit_remaining,

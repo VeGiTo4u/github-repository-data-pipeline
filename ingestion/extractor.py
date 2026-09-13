@@ -21,6 +21,7 @@ def extract_repository_metadata(
     github_token: str,
     s3_bucket: str,
     since: str | None = None,
+    ingestion_date: str | None = None,
 ) -> list[tuple[str, str, str]]:
     """Extracts all resource types for a single repo and returns tempfile paths.
 
@@ -30,6 +31,7 @@ def extract_repository_metadata(
         github_token: GitHub PAT.
         s3_bucket: Target S3 bucket name.
         since: Optional ISO 8601 UTC timestamp watermark for incremental extraction.
+        ingestion_date: Partition date (YYYY-MM-DD). Defaults to UTC today for local runs.
 
     Returns:
         List of (temp_file_path, s3_key, resource_type) tuples.
@@ -37,7 +39,8 @@ def extract_repository_metadata(
     log = get_logger(__name__, run_id=extraction_run_id)
     throttle = get_throttle_threshold(repo_full_name)
     client = GitHubClient(token=github_token, run_id=extraction_run_id, throttle_threshold=throttle)
-    ingestion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if not ingestion_date:
+        ingestion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     repo_slug = repo_full_name.replace("/", "_")
     results = []
 
@@ -79,6 +82,7 @@ def extract_repository_metadata(
                     extraction_run_id=extraction_run_id,
                     s3_bucket=s3_bucket,
                     s3_key=s3_key,
+                    ingestion_date=ingestion_date,
                 )
                 tf.write(json.dumps(envelope) + "\n")
                 record_count += 1
