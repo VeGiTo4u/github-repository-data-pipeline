@@ -90,11 +90,7 @@ def extract_repository_metadata(
             tf.close()
 
         if record_count == 0:
-            import os
-            if os.path.exists(tf.name):
-                os.unlink(tf.name)
-            log.info(f"0 records extracted for {resource_type} ({repo_full_name}); skipping S3 write")
-            continue
+            log.info(f"0 records extracted for {resource_type} ({repo_full_name}); writing empty file to ensure S3 path exists")
 
         log.info(f"Extracted {resource_type} for {repo_full_name}: {record_count} records to {tf.name}")
         results.append((tf.name, s3_key, resource_type))

@@ -97,3 +97,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Connection:** `databricks_default` with `conn_type=databricks`, `login=token`, `password=<PAT>`. Set via Airflow CLI or UI, not `.env` (environment variable overrides are fragile with Docker).
 - **Variables:** `databricks_notebook_path`, `databricks_catalog`, `databricks_schema` stored in Airflow's internal database via CLI (`airflow variables set`).
 - **Operator:** `DatabricksSubmitRunOperator` with `tasks` array structure for Serverless compatibility.
+
+**Airflow-dbt Integration (Silver/Gold layers):**
+- **Dependency:** `dbt-databricks` and `databricks-sdk` are installed directly into the custom Airflow image (`airflow/Dockerfile`).
+- **Execution:** dbt runs natively inside the Airflow worker container via a `BashOperator` wrapping `dbt build`. This keeps orchestration simple (Phase 1) rather than mapping individual models (Cosmos) or delegating to Databricks Jobs.
+- **Environment Context:** Environment variables (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `S3_BUCKET_NAME`) are securely mapped from the root `.env` via Docker Compose's `env_file`, preventing Compose-parsing evaluation bugs and ensuring the `BashOperator` resolves them transparently.

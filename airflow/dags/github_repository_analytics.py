@@ -1,15 +1,17 @@
-"""GitHub Repository Analytics DAG — orchestration only (Phase-1.md Section 7.2).
+"""GitHub Repository Analytics DAG — orchestration only.
 
 Extracts metadata from multiple GitHub repositories in parallel using
 Airflow Dynamic Task Mapping. Each repo gets an independent mapped task
 with its own watermark for incremental extraction.
 
 After all repos are extracted to S3 raw, triggers a Databricks serverless
-job to load raw data into Bronze Delta tables.
+job to load raw data into Bronze Delta tables, then runs dbt build to
+process the Silver layer (staging → intermediate → snapshots → marts + tests).
 
 Zero business logic in this file.
 """
 from airflow import DAG
+from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.databricks.operators.databricks import DatabricksSubmitRunOperator
 from airflow.models import Variable
@@ -78,7 +80,7 @@ with DAG(
         # --- upload each resource file to S3 ---
         for temp_file_path, s3_key, resource_type in results:
             try:
-                if os.path.exists(temp_file_path) and os.path.getsize(temp_file_path) > 0:
+                if os.path.exists(temp_file_path):
                     write_raw_to_s3(
                         temp_file_path=temp_file_path,
                         s3_key=s3_key,
@@ -138,4 +140,14 @@ with DAG(
         },
     )
 
-    extract_repos >> run_bronze
+    # Silver layer — dbt build (staging views → intermediate tables →
+    # SCD2 snapshots → silver marts + all tests) in DAG-resolved order.
+    # Runs inside the Airflow container where dbt-databricks is installed.
+    # profiles.yml + env vars are already configured via docker-compose.
+    dbt_build = BashOperator(
+        task_id="dbt_build",
+        bash_command="cd /opt/airflow/dbt && dbt build --profiles-dir /opt/airflow/dbt",
+        execution_timeout=timedelta(hours=2),
+    )
+
+    extract_repos >> run_bronze >> dbt_build

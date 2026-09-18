@@ -2,6 +2,7 @@ x-airflow-common: &airflow-common
   build:
     context: ..
     dockerfile: airflow/Dockerfile
+  env_file: ../.env
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -13,18 +14,12 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/airflow
     
     # Required for dbt tasks in the DAG
-    DATABRICKS_HOST: ${DATABRICKS_HOST:-}
-    DATABRICKS_TOKEN: ${DATABRICKS_TOKEN:-}
-    DATABRICKS_CATALOG: ${DATABRICKS_CATALOG:-}
-    DATABRICKS_SCHEMA: ${DATABRICKS_SCHEMA:-}
-    DATABRICKS_SQL_WAREHOUSE_HTTP_PATH: ${DATABRICKS_SQL_WAREHOUSE_HTTP_PATH:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     # Mount project packages so PythonOperator can import them
     - ../ingestion:/opt/airflow/ingestion
-    - ../databricks:/opt/airflow/databricks
     - ../dbt:/opt/airflow/dbt
   depends_on: &airflow-common-depends-on
     postgres:

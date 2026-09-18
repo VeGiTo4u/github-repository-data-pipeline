@@ -167,3 +167,18 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - **Incremental materialization in Staging:** Used initially but shifted to intermediate to ensure that any record evaluated for incrementality is also immediately subjected to DQ rules in the same physical table build.
+
+---
+
+## 13. Silver Layer Orchestration via dbt
+
+**Decision:** The Silver layer models are orchestrated directly within the Airflow DAG using a `BashOperator` running `dbt build`, forming a complete end-to-end dependency chain: `extract_repo >> run_bronze_load >> dbt_build`.
+
+**Reason:**
+- Unifies the entire data pipeline (Extract -> Land -> Transform) into a single orchestration graph, providing a single pane of glass for monitoring and troubleshooting.
+- Ensures the dbt transformation layer only runs when all upstream ingestion and Bronze loading tasks have succeeded, preventing partial or staggered data from bleeding into downstream reports.
+- Keeps simplicity for Phase 1 by executing the dbt CLI inside the Airflow worker container (using local environment variables mapping to Databricks), deferring more complex remote execution (like dbt Cloud or Cosmos) until explicitly needed.
+
+**Alternatives Discussed:**
+- **Astronomer Cosmos:** Considered for mapping individual dbt models to Airflow tasks. Deferred to later phases to prioritize simplicity and keep the initial DAG lightweight with a single `dbt build` wrapper.
+- **Databricks Workflows for dbt:** Considered running dbt as a Databricks Job task. Rejected because it fragments orchestration (Airflow for ingestion, Databricks for transformation), making failure tracking across the pipeline harder.
