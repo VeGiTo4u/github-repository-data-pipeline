@@ -6,7 +6,6 @@ Row counts come from Delta Log transaction metrics, not .count().
 
 from pyspark.sql.functions import current_timestamp, col, get_json_object
 from delta.tables import DeltaTable
-
 from databricks.bronze.bronze_config import BRONZE_REGISTRY
 
 
