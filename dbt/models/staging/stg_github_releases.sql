@@ -4,7 +4,7 @@
 
 with parsed as (
     select
-        from_json(data, 'id bigint, tag_name string, name string, draft boolean, prerelease boolean, author struct<login:string>, created_at string, published_at string, target_commitish string') as data,
+        from_json(data, 'id bigint, tag_name string, name string, draft boolean, prerelease boolean, author struct<id:bigint, login:string>, created_at string, published_at string, target_commitish string') as data,
         _bronze_ingest_ts,
         _extraction_run_id,
         _ingestion_date
@@ -22,6 +22,7 @@ source as (
         data.name                               as release_name,
         data.draft                              as is_draft,
         data.prerelease                         as is_prerelease,
+        data.author.id                          as author_id,
         data.author.login                       as author_login,
         cast(data.created_at as timestamp)      as created_at,
         cast(data.published_at as timestamp)    as published_at,

@@ -19,6 +19,15 @@ with source as (
         from {{ this }}
     )
     {% endif %}
+),
+
+enriched as (
+    select
+        s.*,
+        r.repository_id as repository_id
+    from source s
+    left join {{ ref('stg_github_repositories') }} r
+        on r.full_name = s.repo_full_name
 )
 
 select
@@ -35,4 +44,4 @@ select
         {'name': 'closed_at_after_created',    'expr': 'closed_at IS NULL OR closed_at >= created_at'},
         {'name': 'merged_implies_closed',      'expr': "merged_at IS NULL OR state = 'closed'"},
     ]) }}
-from source
+from enriched

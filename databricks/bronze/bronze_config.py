@@ -29,4 +29,9 @@ BRONZE_REGISTRY = {
         "bronze_prefix": "bronze/languages",
         "table_name": "{catalog}.{schema}.languages",
     },
+    "pr_details": {
+        "raw_prefix": "raw/pr_details",
+        "bronze_prefix": "bronze/pr_details",
+        "table_name": "{catalog}.{schema}.pr_details",
+    },
 }

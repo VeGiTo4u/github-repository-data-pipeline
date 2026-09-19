@@ -36,11 +36,10 @@ with DAG(
 
     def _extract_and_load_repo(repo: str, **context):
         """One mapped-task instance per repo — independent watermark, independent failure."""
-        from ingestion.extractor import extract_repository_metadata
+        from ingestion.extractor import extract_repository_metadata, extract_pr_details
         from ingestion.s3_writer import write_raw_to_s3
         from airflow.hooks.base import BaseHook
         import os
-        import json
 
         # --- AWS credentials ---
         try:
@@ -59,26 +58,30 @@ with DAG(
         # data_interval_end is the day the @daily run executes (not ds, which is yesterday)
         ingestion_date = context["data_interval_end"].strftime("%Y-%m-%d")
 
-        # --- per-repo watermark ---
+        # --- per-repo watermark (atomic scalar Variable, no shared JSON blob) ---
+        # ponytail: one Variable per repo eliminates the read-modify-write race
         repo_slug = repo.replace("/", "_")
-        watermarks = Variable.get(
-            "extraction_watermarks", deserialize_json=True, default_var={}
-        )
-        since = watermarks.get(repo_slug)
+        since = Variable.get(f"watermark_{repo_slug}", default_var=None)
         current_run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # --- extract all resources for this repo ---
-        results = extract_repository_metadata(
+        results, pr_numbers = extract_repository_metadata(
             repo_full_name=repo,
             extraction_run_id=run_id,
             github_token=github_token,
             s3_bucket=s3_bucket,
             since=since,
             ingestion_date=ingestion_date,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_region=aws_region,
         )
 
         # --- upload each resource file to S3 ---
         for temp_file_path, s3_key, resource_type in results:
+            if temp_file_path is None:
+                # Already streamed directly to S3 (part files)
+                continue
             try:
                 if os.path.exists(temp_file_path):
                     write_raw_to_s3(
@@ -94,23 +97,35 @@ with DAG(
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
 
+        # --- extract PR details if any new PRs were fetched ---
+        if pr_numbers:
+            extract_pr_details(
+                repo_full_name=repo,
+                pr_numbers=pr_numbers,
+                extraction_run_id=run_id,
+                github_token=github_token,
+                s3_bucket=s3_bucket,
+                ingestion_date=ingestion_date,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_region=aws_region,
+            )
+
         # --- advance this repo's watermark on success only ---
-        # Re-read to avoid overwriting a sibling task's concurrent update
-        watermarks = Variable.get(
-            "extraction_watermarks", deserialize_json=True, default_var={}
-        )
-        watermarks[repo_slug] = current_run_ts
-        Variable.set("extraction_watermarks", json.dumps(watermarks))
+        Variable.set(f"watermark_{repo_slug}", current_run_ts)
 
     # Dynamic Task Mapping — one task instance per repo in repo_list
+    # ponytail: falls back to all repos in REPO_REGISTRY when Variable is unset
+    from ingestion.repo_config import REPO_REGISTRY
+    _repo_list = Variable.get(
+        "repo_list", deserialize_json=True, default_var=list(REPO_REGISTRY.keys())
+    )
+
     extract_repos = PythonOperator.partial(
         task_id="extract_repo",
         python_callable=_extract_and_load_repo,
     ).expand(
-        op_kwargs=[
-            {"repo": r}
-            for r in Variable.get("repo_list", deserialize_json=True, default_var=[])
-        ],
+        op_kwargs=[{"repo": r} for r in _repo_list],
     )
 
     # Bronze load — triggered after all repos finish extraction

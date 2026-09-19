@@ -23,6 +23,12 @@ models:
       - name: updated_at
         tests: [not_null]
 
+  - name: stg_github_pr_details
+    description: "Flattened pull request details from Bronze, latest partition, deduped"
+    columns:
+      - name: pull_request_id
+        tests: [unique, not_null]
+
   - name: stg_github_releases
     description: "Flattened releases from Bronze, latest partition, deduped"
     columns:

@@ -2,11 +2,12 @@ version: 2
 
 sources:
   - name: bronze
-    catalog: "{{ env_var('DATABRICKS_CATALOG') }}"
-    schema: "{{ env_var('DATABRICKS_SCHEMA') }}"
+    catalog: "{{ env_var('DATABRICKS_CATALOG', 'default_catalog') }}"
+    schema: "{{ env_var('DATABRICKS_SCHEMA', 'default_schema') }}"
     tables:
       - name: repositories
       - name: issues
       - name: pull_requests
       - name: releases
       - name: languages
+      - name: pr_details

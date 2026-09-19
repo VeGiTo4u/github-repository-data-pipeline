@@ -49,14 +49,16 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 4. Multi-Repo Scaling & Concurrency (Dynamic Task Mapping)
 
-**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr).
+**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is exactly 1 API page (100 records) regardless of total result size. The extractor accumulates yielded records into a single tempfile per (resource_type, repo), so S3 still receives one file per resource per repo per run.
 
 **Reason:** 
 - A serial loop would take too long for large backfills. Unbounded parallel tasks would instantly exhaust the GitHub API rate limit.
 - Capping concurrency at 3 provides a sweet spot (avg ~1,650 req/hr per task) that allows the pipeline to make parallel progress while leaving enough headroom for cooperative throttling to manage the budget safely.
+- The generator pattern prevents OOM kills: a repo like `microsoft/vscode` (170k issues) no longer loads gigabytes of JSON into RAM before writing to disk.
 
 **Alternatives Discussed:** 
 - **Serial loop:** Rejected because extracting 8 high-volume repositories (e.g., Kubernetes, VSCode) sequentially is too slow and doesn't utilize available bandwidth.
+- **Returning full list from `get()`:** The original implementation accumulated all paginated records into a `list[dict]` before returning. Rejected because 3 concurrent tasks extracting large repos would OOM the Airflow worker container.
 - **Round-robin multiple PATs:** Discussed as a future scaling option to get 10,000+ req/hr, but deemed unnecessary for Phase 1 if rate-limits are managed cooperatively.
 
 ---
@@ -76,13 +78,15 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 6. Granular Per-Repo Watermarks
 
-**Decision:** State management uses a JSON dictionary Airflow Variable (`extraction_watermarks`) to track the `since` timestamp independently for each repository slug.
+**Decision:** State management uses per-repo scalar Airflow Variables (`watermark_{repo_slug}`, e.g. `watermark_apache_spark`) to track the `since` timestamp independently for each repository. Each Variable is a simple string value — no JSON parsing, no shared blob.
 
 **Reason:**
+- **Atomicity:** Airflow `Variable.set()` on a scalar key is atomic at the database level. With 3 parallel tasks, there is no read-modify-write race — each task writes only its own Variable.
 - **Failure isolation:** If `kubernetes/kubernetes` fails halfway through a 4-hour backfill due to rate limits or network errors, other successfully completed repositories (e.g., `duckdb/duckdb`) still get their watermarks advanced.
 - On the next run, the failed repository resumes its backfill, while successful ones only fetch the fast incremental delta.
 
 **Alternatives Discussed:**
+- **Shared JSON dictionary Variable (`extraction_watermarks`):** Used in the initial implementation. Rejected because parallel tasks performing read-modify-write on a single JSON blob create a race condition — Task B's write silently overwrites Task A's watermark update, causing repos to "forget" their progress and trigger redundant full backfills.
 - **Single scalar timestamp:** Used in the initial 1-repo proof of concept. Rejected for multi-repo scaling because a failure in *any* repository would prevent the global watermark from advancing, causing successful repos to redundantly re-fetch data on the next run.
 
 ---
@@ -182,3 +186,18 @@ This document tracks the core design decisions for the GitHub Repository Data An
 **Alternatives Discussed:**
 - **Astronomer Cosmos:** Considered for mapping individual dbt models to Airflow tasks. Deferred to later phases to prioritize simplicity and keep the initial DAG lightweight with a single `dbt build` wrapper.
 - **Databricks Workflows for dbt:** Considered running dbt as a Databricks Job task. Rejected because it fragments orchestration (Airflow for ingestion, Databricks for transformation), making failure tracking across the pipeline harder.
+
+---
+
+## 14. Gold Layer (Presentation) Architecture
+
+**Decision:** The Gold layer uses a Kimball-style star schema. Dimension tables (`dim_*`) are materialized as full-refresh `table`s (Type 1 overwrites). Fact tables (`fact_*`) are materialized as `incremental` with a `unique_key` to enable Delta `MERGE` (Accumulating Snapshot pattern).
+
+**Reason:**
+- **Accumulating Snapshots:** GitHub events (Issues, PRs) have multiple lifecycle stages (opened, merged, closed). Instead of a transactional fact table appending every state change, an accumulating snapshot incrementally updates a single row per entity as it progresses, making downstream BI queries significantly simpler and faster.
+- **Data Quality Barrier:** Gold models read strictly from the Silver SCD2 snapshots (`where dbt_valid_to IS NULL`). Quarantined records in the Silver intermediate layer are entirely hidden from Gold, guaranteeing presentation-layer integrity.
+- **Delta Efficiency:** The `incremental` materialization maps natively to Databricks Delta `MERGE`, allowing fast upserts of mutating GitHub entities without rewriting the entire dataset.
+
+**Alternatives Discussed:**
+- **Transactional Fact Tables:** Rejected because tracking every GitHub event state change as an immutable ledger makes BI aggregations (e.g., "time to merge") extremely complex to write.
+- **SCD2 Dimensions in Gold:** Discussed for `dim_repositories` but rejected for Phase 3 in favor of simpler Type 1 overwrites to reduce complexity, as repository metadata (name, license) changes infrequently.

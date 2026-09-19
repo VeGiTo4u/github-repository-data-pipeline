@@ -30,7 +30,7 @@ enriched as (
         r.repository_id as repository_id
     from source s
     left join {{ ref('stg_github_repositories') }} r
-        on r.full_name = regexp_extract(s.repository_url, 'repos/(.+)$', 1)
+        on r.full_name = s.repo_full_name
 )
 
 select
@@ -38,6 +38,7 @@ select
     issue_number,
     title,
     state,
+    user_id,
     user_login,
     created_at,
     updated_at,

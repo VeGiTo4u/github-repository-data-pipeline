@@ -43,6 +43,7 @@ def run_bronze_load(
         .withColumn("_extraction_run_id", get_json_object(col("value"), "$.lineage.extraction_run_id"))
         .withColumn("_ingestion_date", get_json_object(col("value"), "$.lineage.ingestion_date"))
         .withColumn("_payload_checksum", get_json_object(col("value"), "$.lineage.payload_checksum"))
+        .withColumn("_repo_full_name", get_json_object(col("value"), "$.lineage.repo_full_name"))
         .withColumn("data", get_json_object(col("value"), "$.data"))
         .drop("value")
     )

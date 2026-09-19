@@ -11,7 +11,8 @@
 }}
 
 select
-    repo_slug,
+    repository_id,
+    repo_full_name,
     language,
     bytes,
     _bronze_ingest_ts,

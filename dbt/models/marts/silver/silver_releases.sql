@@ -16,6 +16,7 @@ select
     release_name,
     is_draft,
     is_prerelease,
+    author_id,
     author_login,
     created_at,
     published_at,

@@ -12,6 +12,7 @@ def build_lineage_envelope(
     s3_bucket: str,
     s3_key: str,
     ingestion_date: str | None = None,
+    repo_full_name: str | None = None,
 ) -> dict:
     """Wraps a single GitHub API record in a lineage envelope for JSON Lines.
 
@@ -34,5 +35,6 @@ def build_lineage_envelope(
             "record_count": 1,
             "payload_checksum": hashlib.sha256(payload_bytes).hexdigest(),
             "source_s3_uri": f"s3://{s3_bucket}/{s3_key}",
+            "repo_full_name": repo_full_name,
         },
     }

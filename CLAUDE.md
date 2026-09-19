@@ -72,6 +72,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Idempotency:** Re-runs for a given date replace the data at the S3 location (via partition overwrite or `replaceWhere` in Databricks) rather than duplicating rows.
 - **Data Organization:** "Organize by how you query, not by how you ingest." The S3 `raw/` prefix is partitioned by resource type and date (`raw/{resource_type}/ingestion_date=.../{repo}.json`), making downstream scanning highly efficient.
 - **Rate Limit Budgeting:** GitHub API rate limits (5,000 req/hr) are a hard constraint. The pipeline uses cooperative throttling in the `GitHubClient`, Airflow Dynamic Task Mapping concurrency limits (`max_active_tasks=3`), and per-repo watermark tracking to survive API exhaustion and resume cleanly.
+- **Streaming Extraction:** `GitHubClient.get()` is a generator that yields records one at a time (100 records per API page). The extractor writes each yielded record to a single tempfile per (resource_type, repo), so memory footprint is exactly 1 page regardless of repo size. S3 receives one file per resource per repo per run — the generator does not change the S3 file structure.
+- **Atomic Watermarks:** Per-repo watermarks use individual scalar Airflow Variables (`watermark_{repo_slug}`), not a shared JSON blob. Each parallel task reads/writes only its own Variable, eliminating read-modify-write race conditions.
 - **Security:** Credentials must never be hardcoded or logged. Use Airflow Connections/Variables in production, and a `.env` file strictly for local development testing. IAM policies are explicitly least-privilege (e.g., no `s3:DeleteObject` for the ingestion user).
 
 **Bronze Layer (Medallion Architecture):**
@@ -86,6 +88,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Quarantine Handling:** Bad records (`is_quarantined = true`) are strictly blocked from entering the SCD2 `silver_snapshots`. However, the final `silver_*_current` marts perform a `UNION ALL` of clean snapshot rows and quarantined intermediate rows so analysts can see the bad data without corrupting the historical tracking.
 - **Staging Simplicity:** Staging models are purely lightweight `VIEW`s (JSON flattening, typecasting). All incremental high-water-mark logic lives in the `intermediate` layer.
 - **External Tables:** Silver marts are also registered as Unity Catalog external tables via a dbt `post-hook` macro (`create_silver_external_table.sql`).
+
+**Gold Layer (Medallion Architecture):**
+- **Star Schema:** Dimensions (`dim_`) use Type 1 full-refresh `table` materializations. Facts (`fact_`) use `incremental` materialization with `unique_key` to support Delta `MERGE` (Accumulating Snapshot pattern).
+- **Data Quality Barrier:** Gold models MUST select only from clean Silver snapshots (`where dbt_valid_to is null`). They must never read from the `silver_*_current` views, which contain quarantined records.
+- **Custom Schema Generation:** Gold tables are forced into the `gold` schema using a custom `generate_schema_name.sql` macro to override dbt's default behavior of appending `_gold` to the target schema.
 
 **Databricks Serverless Constraints (MUST follow):**
 - **No RDDs:** Serverless runs Spark Connect which bans all `.rdd` operations. Use DataFrame-native APIs only (e.g., `df.isEmpty()` not `df.rdd.isEmpty()`).

@@ -25,6 +25,18 @@ models:
         +materialized: table
         +post-hook:
           - "{{ create_silver_external_table() }}"
+        silver_issues_current:
+          +materialized: view
+          +post-hook: []
+        silver_pull_requests_current:
+          +materialized: view
+          +post-hook: []
+        silver_repositories_current:
+          +materialized: view
+          +post-hook: []
+      gold:
+        +schema: gold
+        +materialized: table
 
 snapshots:
   github_analytics:

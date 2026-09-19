@@ -7,10 +7,11 @@
 
 with parsed as (
     select
-        from_json(data, 'id bigint, number int, title string, state string, user struct<login:string>, created_at string, updated_at string, closed_at string, comments int, repository_url string, pull_request string, labels array<struct<name:string>>') as data,
+        from_json(data, 'id bigint, number int, title string, state string, user struct<id:bigint, login:string>, created_at string, updated_at string, closed_at string, comments int, repository_url string, pull_request string, labels array<struct<name:string>>') as data,
         _ingestion_timestamp                as ingestion_timestamp,
         _bronze_ingest_ts,
-        _extraction_run_id
+        _extraction_run_id,
+        _repo_full_name                     as repo_full_name
     from {{ source('bronze', 'issues') }}
 ),
 
@@ -20,6 +21,7 @@ source as (
         data.number                         as issue_number,
         data.title                          as title,
         data.state                          as state,
+        data.user.id                        as user_id,
         data.user.login                     as user_login,
         cast(data.created_at as timestamp)  as created_at,
         cast(data.updated_at as timestamp)  as updated_at,
@@ -28,6 +30,7 @@ source as (
         data.repository_url                 as repository_url,
         (data.pull_request is not null)     as is_pull_request,
         data.labels                         as labels,
+        repo_full_name,
         ingestion_timestamp,
         _bronze_ingest_ts,
         _extraction_run_id

@@ -43,47 +43,45 @@ class GitHubClient:
         endpoint: str,
         params: dict | None = None,
         stop_predicate: Callable | None = None,
-    ) -> list[dict]:
-        """Fetches a GitHub API endpoint, handling pagination.
+    ):
+        """Yields records from a GitHub API endpoint, handling pagination.
 
-        Returns the full list of records across all pages.
-        For single-object endpoints (e.g. /repos/owner/repo), returns a
-        one-element list.
-        If stop_predicate is provided, stops pagination when stop_predicate(record) is True.
+        Streams one record at a time — memory footprint is exactly 1 page
+        regardless of total result size.
+        For single-object endpoints (e.g. /repos/owner/repo), yields one dict.
+        If stop_predicate is provided, stops when stop_predicate(record) is True.
         """
+        # ponytail: generator instead of list accumulation — fixes OOM for large repos
         url = f"{self.BASE_URL}{endpoint}"
-        all_records = []
         request_params = dict(params or {})
         request_params.setdefault("per_page", 100)
         page_count = 0
+        record_count = 0
 
         while url:
             response = self._request_with_retry(url, request_params)
             data = response.json()
 
             if isinstance(data, list):
-                if stop_predicate:
-                    for item in data:
-                        if stop_predicate(item):
-                            return all_records
-                        all_records.append(item)
-                else:
-                    all_records.extend(data)
+                for item in data:
+                    if stop_predicate and stop_predicate(item):
+                        return
+                    yield item
+                    record_count += 1
             else:
-                all_records.append(data)
+                yield data
+                record_count += 1
 
             page_count += 1
             if page_count > 1 and page_count % 5 == 0:
                 self._log.info(
-                    f"Still fetching {endpoint}... fetched {page_count} pages ({len(all_records)} records) so far"
+                    f"Still fetching {endpoint}... fetched {page_count} pages ({record_count} records) so far"
                 )
 
             # Follow Link header pagination
             url = response.links.get("next", {}).get("url")
             # After the first request, params are encoded in the next URL
             request_params = None
-
-        return all_records
 
     def get_raw(self, endpoint: str, params: dict | None = None) -> requests.Response:
         """Fetches a single page and returns the raw Response object.
@@ -94,8 +92,21 @@ class GitHubClient:
         url = f"{self.BASE_URL}{endpoint}"
         return self._request_with_retry(url, params)
 
+    def post_graphql(self, query: str, variables: dict | None = None) -> requests.Response:
+        """Sends a GraphQL query via POST and returns the raw Response.
+        
+        The caller is responsible for handling GraphQL-specific pagination 
+        and unpacking the 'data' payload.
+        """
+        url = "https://api.github.com/graphql"
+        json_payload = {"query": query}
+        if variables:
+            json_payload["variables"] = variables
+            
+        return self._request_with_retry(url, params=None, json_payload=json_payload)
+
     def _request_with_retry(
-        self, url: str, params: dict | None, max_retries: int = 3
+        self, url: str, params: dict | None, max_retries: int = 3, json_payload: dict | None = None
     ) -> requests.Response:
         """Retries on 5xx / network errors with exponential backoff.
         Handles rate limits (including 403 rate limit errors) by sleeping until reset.
@@ -104,7 +115,10 @@ class GitHubClient:
         for attempt in range(max_retries + 1):
             try:
                 self._wait_for_rate_limit()
-                response = self._session.get(url, params=params, timeout=30)
+                if json_payload is not None:
+                    response = self._session.post(url, json=json_payload, timeout=30)
+                else:
+                    response = self._session.get(url, params=params, timeout=30)
                 self._last_response = response
 
                 if response.status_code < 400:

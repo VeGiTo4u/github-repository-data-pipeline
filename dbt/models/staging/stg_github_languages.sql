@@ -10,6 +10,7 @@ with source as (
         _extraction_run_id,
         _ingestion_date,
         _raw_s3_uri,
+        _repo_full_name,
         data
     from {{ source('bronze', 'languages') }}
     where _ingestion_date = (
@@ -19,9 +20,8 @@ with source as (
 )
 
 select
-    -- Extract repo full name from the source endpoint:
-    -- /repos/{owner}/{repo}/languages -> {owner}/{repo}
-    regexp_extract(_raw_s3_uri, '([^/]+_[^/]+)\\.json$', 1) as repo_slug,
+    -- Extract repo full name from the lineage envelope
+    _repo_full_name as repo_full_name,
     lang.key    as language,
     lang.value  as bytes,
     _bronze_ingest_ts,

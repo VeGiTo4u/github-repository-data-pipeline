@@ -40,17 +40,7 @@ source as (
         _extraction_run_id,
         _ingestion_date
     from parsed
-),
-
-deduped as (
-    select *,
-        row_number() over (
-            partition by repository_id
-            order by _bronze_ingest_ts desc
-        ) as rn
-    from source
 )
 
-select * except (rn)
-from deduped
-where rn = 1
+select * 
+from source

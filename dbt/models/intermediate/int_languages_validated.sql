@@ -5,6 +5,15 @@
 
 with source as (
     select * from {{ ref('stg_github_languages') }}
+),
+
+enriched as (
+    select
+        s.*,
+        r.repository_id as repository_id
+    from source s
+    left join {{ ref('stg_github_repositories') }} r
+        on r.full_name = s.repo_full_name
 )
 
 select
@@ -13,6 +22,6 @@ select
     {{ evaluate_dq_rules([
         {'name': 'language_not_null',    'expr': 'language IS NOT NULL'},
         {'name': 'bytes_positive',       'expr': 'bytes > 0'},
-        {'name': 'repo_slug_not_null',   'expr': 'repo_slug IS NOT NULL'},
+        {'name': 'repo_id_not_null',     'expr': 'repository_id IS NOT NULL'},
     ]) }}
-from source
+from enriched
