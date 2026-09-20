@@ -15,3 +15,4 @@ Phase-2.md
 
 # Virtual environment in dbt
 dbt/.venv/
+streamlit_app/.streamlit/secrets.toml
