@@ -1,5 +1,6 @@
 import json
 import boto3
+from botocore.config import Config
 from ingestion.logger import get_logger
 
 
@@ -35,7 +36,9 @@ def write_raw_to_s3(
         client_kwargs["aws_access_key_id"] = aws_access_key_id
         client_kwargs["aws_secret_access_key"] = aws_secret_access_key
 
-    s3 = boto3.client("s3", **client_kwargs)
+    # ponytail: handle temporary connection drops to S3
+    retry_config = Config(retries={"max_attempts": 10, "mode": "standard"})
+    s3 = boto3.client("s3", config=retry_config, **client_kwargs)
 
     s3.upload_file(
         Filename=temp_file_path,
@@ -88,7 +91,9 @@ def stream_records_to_s3(
         client_kwargs["aws_access_key_id"] = aws_access_key_id
         client_kwargs["aws_secret_access_key"] = aws_secret_access_key
 
-    s3 = boto3.client("s3", **client_kwargs)
+    # ponytail: handle temporary connection drops to S3
+    retry_config = Config(retries={"max_attempts": 10, "mode": "standard"})
+    s3 = boto3.client("s3", config=retry_config, **client_kwargs)
 
     # ponytail: delete existing objects in prefix to prevent dangling parts on retry
     try:

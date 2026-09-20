@@ -106,7 +106,7 @@ class GitHubClient:
         return self._request_with_retry(url, params=None, json_payload=json_payload)
 
     def _request_with_retry(
-        self, url: str, params: dict | None, max_retries: int = 3, json_payload: dict | None = None
+        self, url: str, params: dict | None, max_retries: int = 10, json_payload: dict | None = None
     ) -> requests.Response:
         """Retries on 5xx / network errors with exponential backoff.
         Handles rate limits (including 403 rate limit errors) by sleeping until reset.
@@ -161,7 +161,7 @@ class GitHubClient:
                     f"Network error for {url}, attempt {attempt + 1}/{max_retries + 1}: {exc}",
                 )
 
-            backoff = 2 ** attempt
+            backoff = min(2 ** attempt, 60)
             self._log.info(f"Retrying in {backoff}s...")
             time.sleep(backoff)
 
