@@ -315,8 +315,8 @@ with tab_overview:
         open_issues = int(df_health["open_issues"].sum())
         total_prs = int(df_health["total_prs"].sum())
         open_prs = int(df_health["open_prs"].sum())
-        avg_close = df_health["avg_time_to_close_hours"].mean()
-        avg_merge = df_health["avg_time_to_merge_hours"].mean()
+        avg_close = df_health["median_time_to_close_hours"].mean() # Mean of medians across repos
+        avg_merge = df_health["median_time_to_merge_hours"].mean()
         total_contribs = int(df_health["approximate_total_contributors"].sum())
 
         # KPI row
@@ -327,8 +327,8 @@ with tab_overview:
         c4.metric("Open PRs", f"{open_prs:,}")
 
         c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Avg Close Time", f"{avg_close:,.0f} hrs" if pd.notna(avg_close) else "—")
-        c6.metric("Avg Merge Time", f"{avg_merge:,.0f} hrs" if pd.notna(avg_merge) else "—")
+        c5.metric("Median Close Time", f"{avg_close:,.0f} hrs" if pd.notna(avg_close) else "—")
+        c6.metric("Median Merge Time", f"{avg_merge:,.0f} hrs" if pd.notna(avg_merge) else "—")
         c7.metric("Contributors", f"{total_contribs:,}")
         c8.metric("Repositories", f"{len(df_health):,}")
 
@@ -435,8 +435,8 @@ with tab_trends:
                     "issues_closed": "sum",
                     "prs_opened": "sum",
                     "prs_merged": "sum",
-                    "avg_time_to_close_hours": "mean",
-                    "avg_time_to_merge_hours": "mean",
+                    "median_time_to_close_hours": "mean",
+                    "median_time_to_merge_hours": "mean",
                 })
             else:
                 df_agg = df_ts_active
@@ -539,12 +539,12 @@ with tab_prs:
         st.info("No PR data available.")
     else:
         merged_prs = df_pr[df_pr["merged_date_key"].notna()]
-        avg_merge_hrs = merged_prs["time_to_merge_hours"].mean()
+        avg_merge_hrs = merged_prs["time_to_merge_hours"].median()
 
         mc1, mc2, mc3, mc4 = st.columns(4)
         mc1.metric("Total PRs", f"{len(df_pr):,}")
         mc2.metric("Merged", f"{len(merged_prs):,}")
-        mc3.metric("Avg Merge Time", f"{avg_merge_hrs:,.0f} hrs" if pd.notna(avg_merge_hrs) else "—")
+        mc3.metric("Median Merge Time", f"{avg_merge_hrs:,.0f} hrs" if pd.notna(avg_merge_hrs) else "—")
         mc4.metric("Avg Lines Changed", f"{df_pr['total_lines_changed'].mean():,.0f}")
 
         st.markdown("")

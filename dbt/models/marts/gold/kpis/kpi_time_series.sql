@@ -28,7 +28,7 @@ issues_closed as (
         i.repo_id,
         d.month_year,
         count(i.issue_id) as issues_closed,
-        avg(i.time_to_close_hours) as avg_time_to_close_hours
+        median(i.time_to_close_hours) as median_time_to_close_hours
     from {{ ref('fact_issues') }} i
     join date_spine d on i.closed_date_key = d.date_key
     where i.closed_date_key is not null
@@ -50,7 +50,7 @@ prs_merged as (
         p.repo_id,
         d.month_year,
         count(p.pr_id) as prs_merged,
-        avg(p.time_to_merge_hours) as avg_time_to_merge_hours
+        median(p.time_to_merge_hours) as median_time_to_merge_hours
     from {{ ref('fact_pull_requests') }} p
     join date_spine d on p.merged_date_key = d.date_key
     where p.merged_date_key is not null
@@ -73,10 +73,10 @@ select
     b.month_year,
     coalesce(io.issues_opened, 0) as issues_opened,
     coalesce(ic.issues_closed, 0) as issues_closed,
-    ic.avg_time_to_close_hours,
+    ic.median_time_to_close_hours,
     coalesce(po.prs_opened, 0) as prs_opened,
     coalesce(pm.prs_merged, 0) as prs_merged,
-    pm.avg_time_to_merge_hours
+    pm.median_time_to_merge_hours
 from base b
 left join issues_opened io on b.repo_id = io.repo_id and b.month_year = io.month_year
 left join issues_closed ic on b.repo_id = ic.repo_id and b.month_year = ic.month_year
