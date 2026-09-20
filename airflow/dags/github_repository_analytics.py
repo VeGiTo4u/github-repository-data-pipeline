@@ -28,7 +28,7 @@ with DAG(
     schedule_interval="@daily",
     start_date=datetime(2026, 9, 1),
     catchup=False,
-    max_active_runs=2,
+    max_active_runs=1,
     max_active_tasks=3,
     default_args=default_args,
     tags=["github", "analytics", "phase1", "phase2"],
