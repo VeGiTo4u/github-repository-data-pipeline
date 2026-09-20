@@ -16,14 +16,14 @@
 {% macro evaluate_dq_rules(rules) %}
     array_compact(array(
         {%- for rule in rules %}
-        CASE WHEN NOT ({{ rule.expr }}) THEN '{{ rule.name }}' ELSE NULL END
+        CASE WHEN ({{ rule.expr }}) THEN NULL ELSE '{{ rule.name }}' END
         {%- if not loop.last %},{% endif %}
         {%- endfor %}
     )) as dq_failed_rules,
-    (
+    size(array_compact(array(
         {%- for rule in rules %}
-        NOT ({{ rule.expr }})
-        {%- if not loop.last %} OR {% endif %}
+        CASE WHEN ({{ rule.expr }}) THEN NULL ELSE '{{ rule.name }}' END
+        {%- if not loop.last %},{% endif %}
         {%- endfor %}
-    ) as is_quarantined
+    ))) > 0 as is_quarantined
 {% endmacro %}

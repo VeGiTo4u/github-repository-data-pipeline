@@ -9,23 +9,33 @@
 }}
 
 select
-    pull_request_id as pr_id,
-    repository_id as repo_id,
-    user_id as author_user_id,
-    cast(date_format(to_date(created_at), 'yyyyMMdd') as int) as created_date_key,
-    cast(date_format(to_date(merged_at), 'yyyyMMdd') as int) as merged_date_key,
-    cast(date_format(to_date(closed_at), 'yyyyMMdd') as int) as closed_date_key,
-    state,
-    (unix_timestamp(merged_at) - unix_timestamp(created_at)) / 3600.0 as time_to_merge_hours,
-    (unix_timestamp(closed_at) - unix_timestamp(created_at)) / 3600.0 as time_to_close_hours,
-    review_comments_count as comment_count,
-    additions,
-    deletions,
-    changed_files,
-    commits_count,
-    updated_at
-from {{ ref('snap_pull_requests') }}
-where dbt_valid_to is null
+    md5(cast(p.pull_request_id as string)) as pull_request_sk,
+    r.repository_sk as repository_sk,
+    md5(cast(p.user_id as string)) as author_user_sk,
+    p.pull_request_id as pr_id,
+    p.repository_id as repo_id,
+    p.user_id as author_user_id,
+    cast(date_format(to_date(p.created_at), 'yyyyMMdd') as int) as created_date_key,
+    cast(date_format(to_date(p.merged_at), 'yyyyMMdd') as int) as merged_date_key,
+    cast(date_format(to_date(p.closed_at), 'yyyyMMdd') as int) as closed_date_key,
+    p.state,
+    (unix_timestamp(p.merged_at) - unix_timestamp(p.created_at)) / 3600.0 as time_to_merge_hours,
+    (unix_timestamp(p.closed_at) - unix_timestamp(p.created_at)) / 3600.0 as time_to_close_hours,
+    p.review_comments_count as comment_count,
+    p.additions,
+    p.deletions,
+    p.changed_files,
+    p.commits_count,
+    p.updated_at,
+    p._bronze_ingest_ts,
+    p._extraction_run_id,
+    current_timestamp() as _gold_update_ts
+from {{ ref('snap_pull_requests') }} p
+left join {{ ref('dim_repositories') }} r
+  on p.repository_id = r.repo_id
+  and p.created_at >= r.valid_from
+  and p.created_at < coalesce(r.valid_to, cast('9999-12-31' as timestamp))
+where p.dbt_valid_to is null
 {% if is_incremental() %}
-  and updated_at >= (select max(updated_at) from {{ this }})
+  and p.updated_at >= (select coalesce(max(updated_at) - interval 3 days, cast('1900-01-01' as timestamp)) from {{ this }})
 {% endif %}

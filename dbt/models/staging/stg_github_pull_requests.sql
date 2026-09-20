@@ -9,7 +9,7 @@
 
 with parsed as (
     select
-        from_json(data, 'id bigint, number int, title string, state string, user struct<id:bigint, login:string>, created_at string, updated_at string, closed_at string, merged_at string, merge_commit_sha string, draft boolean, head struct<ref:string>, base struct<ref:string>') as data,
+        from_json(data, 'id bigint, number int, title string, state string, user struct<id:bigint, login:string>, created_at string, updated_at string, closed_at string, merged_at string, merge_commit_sha string, draft boolean, head struct<ref:string>, base struct<ref:string, repo:struct<full_name:string>>') as data,
         _ingestion_timestamp                as ingestion_timestamp,
         _bronze_ingest_ts,
         _extraction_run_id,
@@ -33,6 +33,7 @@ source as (
         data.draft                          as is_draft,
         data.head.ref                       as head_branch,
         data.base.ref                       as base_branch,
+        data.base.repo.full_name            as canonical_repo_name,
 
         -- Pulling PR details from a left join later
         repo_full_name,
@@ -80,7 +81,8 @@ select
     latest_prs.ingestion_timestamp,
     latest_prs._bronze_ingest_ts,
     latest_prs._extraction_run_id,
-    latest_prs.repo_full_name
+    latest_prs.repo_full_name,
+    latest_prs.canonical_repo_name
 from latest_prs
 left join {{ ref('stg_github_pr_details') }} as details
     on latest_prs.pull_request_id = details.pull_request_id

@@ -1,0 +1,96 @@
+version: 2
+
+models:
+  - name: dim_repositories
+    description: "Type-2 SCD Dimension table for repositories."
+    columns:
+      - name: repository_sk
+        description: "Surrogate key for the repository snapshot."
+        tests:
+          - unique
+          - not_null
+      - name: repo_id
+        description: "Natural key from GitHub."
+        tests:
+          - not_null
+
+  - name: dim_users
+    description: "Type-1 Dimension table for users (authors, commenters, etc)."
+    columns:
+      - name: user_sk
+        description: "Surrogate key for the user."
+        tests:
+          - unique
+          - not_null
+      - name: user_id
+        description: "Natural key from GitHub."
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_issues
+    description: "Accumulating snapshot fact table for GitHub issues. ponytail: Hard-deleted issues on GitHub are not captured by incremental delta and will appear permanently open."
+    columns:
+      - name: issue_sk
+        description: "Surrogate key for the issue."
+        tests:
+          - unique
+          - not_null
+      - name: repository_sk
+        description: "Foreign key to the repository dimension snapshot (point-in-time)."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repositories')
+                field: repository_sk
+      - name: author_user_sk
+        description: "Foreign key to the user dimension."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_users')
+                field: user_sk
+
+  - name: fact_pull_requests
+    description: "Accumulating snapshot fact table for GitHub pull requests. ponytail: Hard-deleted PRs on GitHub are not captured by incremental delta and will appear permanently open."
+    columns:
+      - name: pull_request_sk
+        description: "Surrogate key for the pull request."
+        tests:
+          - unique
+          - not_null
+      - name: repository_sk
+        description: "Foreign key to the repository dimension snapshot (point-in-time)."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repositories')
+                field: repository_sk
+      - name: author_user_sk
+        description: "Foreign key to the user dimension."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_users')
+                field: user_sk
+
+  - name: fact_releases
+    description: "Transactional fact table for GitHub releases."
+    columns:
+      - name: release_sk
+        description: "Surrogate key for the release."
+        tests:
+          - unique
+          - not_null
+      - name: author_user_sk
+        description: "Foreign key to the user dimension."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_users')
+                field: user_sk

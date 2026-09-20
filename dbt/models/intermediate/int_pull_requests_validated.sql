@@ -27,7 +27,7 @@ enriched as (
         r.repository_id as repository_id
     from source s
     left join {{ ref('stg_github_repositories') }} r
-        on r.full_name = s.repo_full_name
+        on concat(r.owner_login, '/', r.repo_name) = s.canonical_repo_name
 )
 
 select

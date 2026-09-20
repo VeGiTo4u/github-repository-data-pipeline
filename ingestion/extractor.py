@@ -70,6 +70,8 @@ def extract_repository_metadata(
         if resource_type == "issues":
             params["state"] = "all"
             if since:
+                # ponytail: hard deletes on GitHub won't trigger `since`. 
+                # Downstream SCD2 assumes they remain open. Rare enough to ignore.
                 params["since"] = since
         elif resource_type == "pull_requests":
             params["state"] = "all"
@@ -116,16 +118,16 @@ def extract_repository_metadata(
                 results.append((None, s3_key_prefix, resource_type))
             else:
                 # Local tempfile for single-object resources
-                tf = tempfile.NamedTemporaryFile("w", delete=False)
-                record_count = 0
-                for envelope in envelope_generator():
-                    tf.write(json.dumps(envelope) + "\n")
-                    record_count += 1
-                tf.close()
+                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
+                    record_count = 0
+                    for envelope in envelope_generator():
+                        tf.write(json.dumps(envelope) + "\n")
+                        record_count += 1
+                    tf_name = tf.name
                 if record_count == 0:
                     log.info(f"0 records extracted for {resource_type} ({repo_full_name})")
-                log.info(f"Extracted {resource_type} for {repo_full_name}: {record_count} records to {tf.name}")
-                results.append((tf.name, s3_key, resource_type))
+                log.info(f"Extracted {resource_type} for {repo_full_name}: {record_count} records to {tf_name}")
+                results.append((tf_name, s3_key, resource_type))
                 
         except Exception as e:
             log.error(f"Failed extracting {resource_type} for {repo_full_name}: {e}")
@@ -181,9 +183,18 @@ def extract_pr_details(
             response = client.post_graphql(query=graphql_query)
             data = response.json()
             
-            repo_data = data.get("data", {}).get("repository", {})
-            if not repo_data:
-                continue
+            repo_data = data.get("data", {}).get("repository") or {}
+            if not repo_data and data.get("errors"):
+                log.warning(f"GraphQL chunk failed (poisoned PR), falling back to individual queries for chunk")
+                for n in chunk:
+                    single_query = f"""query {{ repository(owner: "{owner}", name: "{name}") {{ pr_{n}: pullRequest(number: {n}) {{ databaseId number additions deletions changedFiles commits {{ totalCount }} reviewThreads {{ totalCount }} }} }} }}"""
+                    try:
+                        resp = client.post_graphql(query=single_query)
+                        s_repo = resp.json().get("data", {}).get("repository") or {}
+                        if s_repo.get(f"pr_{n}"):
+                            repo_data[f"pr_{n}"] = s_repo[f"pr_{n}"]
+                    except Exception as e:
+                        log.warning(f"Failed to fetch PR {n} individually: {e}")
                 
             for k, pr_node in repo_data.items():
                 if pr_node:

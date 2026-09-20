@@ -77,26 +77,6 @@ with DAG(
             aws_region=aws_region,
         )
 
-        # --- upload each resource file to S3 ---
-        for temp_file_path, s3_key, resource_type in results:
-            if temp_file_path is None:
-                # Already streamed directly to S3 (part files)
-                continue
-            try:
-                if os.path.exists(temp_file_path):
-                    write_raw_to_s3(
-                        temp_file_path=temp_file_path,
-                        s3_key=s3_key,
-                        bucket=s3_bucket,
-                        aws_access_key_id=aws_access_key_id,
-                        aws_secret_access_key=aws_secret_access_key,
-                        aws_region=aws_region,
-                        run_id=run_id,
-                    )
-            finally:
-                if os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-
         # --- extract PR details if any new PRs were fetched ---
         if pr_numbers:
             extract_pr_details(
@@ -111,8 +91,28 @@ with DAG(
                 aws_region=aws_region,
             )
 
-        # --- advance this repo's watermark on success only ---
+        # ponytail: save watermark BEFORE uploading temp files. Tempfile resources (repos, languages) 
+        # don't use 'since', so they re-fetch safely for 1 API call on retry. Streamed resources 
+        # (issues, PRs) use 'since' and are already on S3, so this prevents massive re-fetching.
         Variable.set(f"watermark_{repo_slug}", current_run_ts)
+
+        # --- upload each resource file to S3 ---
+        for temp_file_path, s3_key, resource_type in results:
+            if temp_file_path is None:
+                # Already streamed directly to S3 (part files)
+                continue
+            if os.path.exists(temp_file_path):
+                write_raw_to_s3(
+                    temp_file_path=temp_file_path,
+                    s3_key=s3_key,
+                    bucket=s3_bucket,
+                    aws_access_key_id=aws_access_key_id,
+                    aws_secret_access_key=aws_secret_access_key,
+                    aws_region=aws_region,
+                    run_id=run_id,
+                )
+                # only unlink on success so retry can skip if we implement local caching later
+                os.unlink(temp_file_path)
 
     # Dynamic Task Mapping — one task instance per repo in repo_list
     # ponytail: falls back to all repos in REPO_REGISTRY when Variable is unset
