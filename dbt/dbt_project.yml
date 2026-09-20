@@ -23,17 +23,12 @@ models:
     marts:
       silver:
         +materialized: table
-        +post-hook:
-          - "{{ create_silver_external_table() }}"
         issues_current:
           +materialized: view
-          +post-hook: []
         pull_requests_current:
           +materialized: view
-          +post-hook: []
         repositories_current:
           +materialized: view
-          +post-hook: []
       gold:
         +schema: gold
         +materialized: table

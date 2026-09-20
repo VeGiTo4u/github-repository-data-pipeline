@@ -165,4 +165,29 @@ with DAG(
         execution_timeout=timedelta(hours=2),
     )
 
-    extract_repos >> run_bronze >> dbt_build
+    # Export KPI tables to S3 as Parquet
+    export_kpis = DatabricksSubmitRunOperator(
+        task_id="export_kpis",
+        databricks_conn_id="databricks_default",
+        json={
+            "run_name": "export_kpis_{{ ds }}",
+            "tasks": [
+                {
+                    "task_key": "export_kpis",
+                    "notebook_task": {
+                        "notebook_path": Variable.get(
+                            "databricks_export_notebook_path",
+                            default_var="/Workspace/Repos/default/Github-Repository-Data-Analysis/databricks/export/export_kpis_notebook",
+                        ),
+                        "base_parameters": {
+                            "s3_bucket": Variable.get("s3_bucket_name"),
+                            "catalog": Variable.get("databricks_catalog"),
+                            "schema": Variable.get("databricks_schema"),
+                        },
+                    },
+                }
+            ],
+        },
+    )
+
+    extract_repos >> run_bronze >> dbt_build >> export_kpis

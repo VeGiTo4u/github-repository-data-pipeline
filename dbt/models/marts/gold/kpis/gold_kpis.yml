@@ -1,0 +1,38 @@
+version: 2
+
+models:
+  - name: kpi_repo_health
+    description: "Overview of repository health metrics (issues, PRs, contributors)."
+    columns:
+      - name: repo_id
+        tests:
+          - unique
+          - not_null
+
+  - name: kpi_time_series
+    description: "Monthly aggregation of issues and PRs for trend analysis."
+    columns:
+      - name: repo_id
+        tests:
+          - not_null
+      - name: month_year
+        tests:
+          - not_null
+
+  - name: kpi_user_contributions
+    description: "Aggregated activity per user per repository for calculating power users and engagement buckets."
+    columns:
+      - name: user_id
+        tests:
+          - not_null
+      - name: repo_id
+        tests:
+          - not_null
+
+  - name: kpi_pr_complexity
+    description: "Pull request size and complexity grouped into buckets."
+    columns:
+      - name: pr_id
+        tests:
+          - unique
+          - not_null
