@@ -161,7 +161,7 @@ with DAG(
     # profiles.yml + env vars are already configured via docker-compose.
     dbt_build = BashOperator(
         task_id="dbt_build",
-        bash_command="cd /opt/airflow/dbt && dbt build --profiles-dir /opt/airflow/dbt",
+        bash_command="cd /opt/airflow/dbt && dbt clean && dbt build --profiles-dir /opt/airflow/dbt",
         execution_timeout=timedelta(hours=2),
     )
 
