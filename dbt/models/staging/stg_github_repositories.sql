@@ -5,6 +5,7 @@
 with parsed as (
     select
         from_json(data, 'id bigint, full_name string, owner struct<login:string>, name string, description string, language string, stargazers_count bigint, forks_count bigint, watchers_count bigint, open_issues_count bigint, default_branch string, fork boolean, archived boolean, created_at string, updated_at string, pushed_at string, size bigint, topics array<string>, license struct<spdx_id:string>') as data,
+        _repo_full_name,
         _bronze_ingest_ts,
         _extraction_run_id,
         _ingestion_date
@@ -18,7 +19,7 @@ with parsed as (
 source as (
     select
         data.id                             as repository_id,
-        data.full_name                      as full_name,
+        _repo_full_name                     as full_name,
         data.owner.login                    as owner_login,
         data.name                           as repo_name,
         data.description                    as description,
