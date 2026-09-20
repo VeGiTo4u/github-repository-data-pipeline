@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: silver_repositories_current
+  - name: repositories_current
     description: >
       Current-state view of repositories (SCD2, dbt_valid_to is null) with data quality tagging.
       Clean records from snapshot + quarantined records from intermediate layer.
@@ -17,7 +17,7 @@ models:
       - name: dq_failed_rules
         description: "Array of failed DQ rule names (empty array if clean)"
 
-  - name: silver_issues_current
+  - name: issues_current
     description: >
       Current-state issues excluding PR-issues (is_pull_request = false) with data quality tagging.
       Clean records from snapshot + quarantined records from intermediate layer.
@@ -33,7 +33,7 @@ models:
       - name: dq_failed_rules
         description: "Array of failed DQ rule names (empty array if clean)"
 
-  - name: silver_pull_requests_current
+  - name: pull_requests_current
     description: >
       Current-state pull requests (SCD2, dbt_valid_to is null) with data quality tagging.
       Clean records from snapshot + quarantined records from intermediate layer.
@@ -47,7 +47,7 @@ models:
       - name: dq_failed_rules
         description: "Array of failed DQ rule names (empty array if clean)"
 
-  - name: silver_releases
+  - name: releases
     description: >
       Releases (Type 1 incremental merge, no SCD2) with data quality tagging.
       All records (clean + quarantined) in a single table.
@@ -62,7 +62,7 @@ models:
       - name: dq_failed_rules
         description: "Array of failed DQ rule names (empty array if clean)"
 
-  - name: silver_languages
+  - name: languages
     description: >
       Languages per repository, unpivoted from map (Type 1 full overwrite) with data quality tagging.
       All records (clean + quarantined) in a single table.

@@ -16,5 +16,5 @@ select
     cast(date_format(to_date(published_at), 'yyyyMMdd') as int) as published_date_key,
     tag_name,
     is_prerelease
-from {{ ref('silver_releases') }}
+from {{ ref('releases') }}
 where is_quarantined = false

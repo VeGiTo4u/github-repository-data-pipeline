@@ -10,11 +10,11 @@
 }}
 
 with all_users as (
-    select user_id, user_login as login from {{ ref('silver_issues_current') }} where is_quarantined = false
+    select user_id, user_login as login from {{ ref('issues_current') }} where is_quarantined = false
     union all
-    select user_id, user_login as login from {{ ref('silver_pull_requests_current') }} where is_quarantined = false
+    select user_id, user_login as login from {{ ref('pull_requests_current') }} where is_quarantined = false
     union all
-    select author_id as user_id, author_login as login from {{ ref('silver_releases') }} where is_quarantined = false
+    select author_id as user_id, author_login as login from {{ ref('releases') }} where is_quarantined = false
 )
 select 
     user_id,
