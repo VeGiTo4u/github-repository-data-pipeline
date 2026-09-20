@@ -109,3 +109,15 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Dependency:** `dbt-databricks` and `databricks-sdk` are installed directly into the custom Airflow image (`airflow/Dockerfile`).
 - **Execution:** dbt runs natively inside the Airflow worker container via a `BashOperator` wrapping `dbt build`. This keeps orchestration simple (Phase 1) rather than mapping individual models (Cosmos) or delegating to Databricks Jobs.
 - **Environment Context:** Environment variables (`DATABRICKS_HOST`, `DATABRICKS_TOKEN`, `S3_BUCKET_NAME`) are securely mapped from the root `.env` via Docker Compose's `env_file`, preventing Compose-parsing evaluation bugs and ensuring the `BashOperator` resolves them transparently.
+
+**Hard Deletes Limitation:**
+- **Gotcha:** Incremental extraction uses the `since` API parameter for issues and PRs. If a record is hard-deleted on GitHub, the `since` delta will never see it.
+- **Consequence:** Your Silver SCD2 (`silver_snapshots`) will show that issue/PR as active/open forever. Acknowledge this limitation in downstream dashboards, or schedule periodic full-refresh reconciliations.
+
+**Safe File I/O & Extraction Integrity:**
+- Temporary extraction files must always explicitly use `encoding="utf-8"` to prevent localized decoding crashes on irregular unicode.
+- Never manually `.close()` tempfiles without a `try/finally`. Prefer `with` blocks to prevent descriptor leaks on disk-full/API crashes.
+- High-water marks (`Variable.set("watermark...")`) should be saved *before* external uploads (like S3) so that transient upload failures don't trigger massive redundant re-fetches from API source systems on retry.
+
+**dbt-fusion Compatibility:**
+- When defining YAML generic tests (e.g. `relationships`), always nest parameters (like `to`, `field`) under an `arguments:` dictionary to support `dbt-fusion`'s strict parsing mode (resolves `dbt1159`).

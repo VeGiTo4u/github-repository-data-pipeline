@@ -200,4 +200,22 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - **Transactional Fact Tables:** Rejected because tracking every GitHub event state change as an immutable ledger makes BI aggregations (e.g., "time to merge") extremely complex to write.
-- **SCD2 Dimensions in Gold:** Discussed for `dim_repositories` but rejected for Phase 3 in favor of simpler Type 1 overwrites to reduce complexity, as repository metadata (name, license) changes infrequently.
+- **SCD2 Dimensions in Gold:** We implemented Type 2 SCD tracking for `dim_repositories` based on a `valid_from` and `valid_to` snapshot strategy. Fact tables (`fact_issues` and `fact_pull_requests`) perform **Point-in-Time Joins** against the `dim_repositories` table. This guarantees that an issue or PR is linked to the repository's exact metadata state (e.g., its star count or name) precisely at the time the event occurred (`created_at` or `updated_at` within the validity window).
+
+## 15. S3 Tempfile Extraction Integrity
+**Decision:** All local temporary files used for accumulating records before S3 upload are wrapped in `with` context managers and explicitly specify `encoding="utf-8"`. The repository watermark is advanced **before** the final S3 upload loop.
+**Reason:**
+- Prevents file descriptor leaks if the disk fills up or the API crashes mid-extraction.
+- Enforcing UTF-8 ensures emojis or non-standard characters in GitHub issues/PRs don't crash the pipeline on servers with a different default locale.
+- Saving the watermark *before* S3 upload ensures that if an AWS S3 API failure (e.g. 503) crashes the task, the next Airflow retry will not redundantly hammer the GitHub API to re-download the data. It will simply retry the upload (or, in the current design, skip safely since `since` is already advanced).
+
+## 16. GraphQL Batch Query Fallback
+**Decision:** The `pr_details` extraction batches 15 pull requests into a single GraphQL query using aliases. If the batch query fails (e.g., due to a single "poisoned" or deleted PR causing a resolution error), the extractor falls back to querying the 15 PRs individually in a loop.
+**Reason:**
+- Batching drastically improves performance and reduces rate-limit consumption for code-level details.
+- The fallback mechanism ensures that one corrupted PR doesn't cause the pipeline to drop the other 14 valid PRs in the chunk.
+
+## 17. dbt-fusion Compatibility
+**Decision:** All dbt YAML configurations (like generic tests) use the strict `arguments:` syntax for passing properties (e.g., `to` and `field` for `relationships` tests) instead of top-level keys.
+**Reason:**
+- Ensures compatibility with `dbt-fusion` (dbt 2.0+) strict YAML validation mode.
