@@ -185,7 +185,7 @@ with DAG(
                         "base_parameters": {
                             "s3_bucket": Variable.get("s3_bucket_name"),
                             "catalog": Variable.get("databricks_catalog"),
-                            "schema": Variable.get("databricks_schema"),
+                            "schema": "gold",
                         },
                     },
                 }
