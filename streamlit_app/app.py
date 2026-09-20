@@ -682,11 +682,11 @@ with tab_community:
             )
             fig_top_pr.update_layout(
                 **PLOTLY_LAYOUT,
-                yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]),
                 xaxis_title="",
                 yaxis_title="",
                 height=400,
             )
+            fig_top_pr.update_layout(yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig_top_pr, use_container_width=True)
 
         with col_r:
@@ -705,11 +705,11 @@ with tab_community:
             )
             fig_top_adds.update_layout(
                 **PLOTLY_LAYOUT,
-                yaxis=dict(autorange="reversed", **PLOTLY_LAYOUT["yaxis"]),
                 xaxis_title="",
                 yaxis_title="",
                 height=400,
             )
+            fig_top_adds.update_layout(yaxis=dict(autorange="reversed"))
             st.plotly_chart(fig_top_adds, use_container_width=True)
 
 
