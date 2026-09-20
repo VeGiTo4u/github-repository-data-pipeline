@@ -177,7 +177,10 @@ with DAG(
                     "notebook_task": {
                         "notebook_path": Variable.get(
                             "databricks_export_notebook_path",
-                            default_var="/Workspace/Repos/default/Github-Repository-Data-Analysis/databricks/export/export_kpis_notebook",
+                            default_var=Variable.get(
+                                "databricks_notebook_path",
+                                default_var="/Workspace/Repos/default/Github-Repository-Data-Analysis/databricks/bronze/bronze_notebook"
+                            ).replace("/bronze/bronze_notebook", "/export/export_kpis_notebook"),
                         ),
                         "base_parameters": {
                             "s3_bucket": Variable.get("s3_bucket_name"),
