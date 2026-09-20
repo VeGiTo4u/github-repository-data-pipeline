@@ -7,7 +7,6 @@ import pandas as pd
 
 st.set_page_config(
     page_title="GitHub Repository Analytics",
-    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -259,9 +258,9 @@ st.markdown("""
     <h1>GitHub Repository Analytics</h1>
     <p>Real-time insights from 10 open-source repositories · Data refreshed daily</p>
     <div class="header-badges">
-        <span class="header-badge badge-duckdb">🦆 DuckDB</span>
-        <span class="header-badge badge-airflow">🌊 Airflow</span>
-        <span class="header-badge badge-dbt">🔶 dbt</span>
+        <span class="header-badge badge-duckdb">DuckDB</span>
+        <span class="header-badge badge-airflow">Airflow</span>
+        <span class="header-badge badge-dbt">dbt</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -285,7 +284,6 @@ with st.sidebar:
         "exported from Databricks Unity Catalog to S3. "
         "DuckDB provides sub-second query latency."
     )
-    st.caption("Built with ❤️ using the modern data stack.")
 
 
 # ── Helper: short repo name ──────────────────────────────────────────────────
@@ -296,10 +294,10 @@ def short_name(full_name: str) -> str:
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 tab_overview, tab_trends, tab_prs, tab_community = st.tabs([
-    "🏥  Repo Health",
-    "📈  Trends",
-    "🔀  PR Complexity",
-    "👥  Community",
+    "Repo Health",
+    "Trends",
+    "PR Complexity",
+    "Community",
 ])
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -642,7 +640,7 @@ with tab_community:
         st.markdown("")
 
         # Leaderboard
-        st.markdown('<div class="section-header">🏆 Top Contributors</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Top Contributors</div>', unsafe_allow_html=True)
         df_top = df_users.head(10).copy()
         df_top["short_repo"] = df_top["repo_name"].apply(short_name)
         display_name = "github_username" if "github_username" in df_top.columns else "user_id"
