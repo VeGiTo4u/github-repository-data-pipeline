@@ -122,7 +122,10 @@ class GitHubClient:
                 self._last_response = response
 
                 if response.status_code < 400:
-                    return response
+                    if not response.text.strip() and response.status_code != 204:
+                        self._log.warning(f"Empty {response.status_code} OK from {url}, treating as timeout")
+                    else:
+                        return response
 
                 # Rate limit 403 — sleep until reset and retry
                 remaining = response.headers.get("X-RateLimit-Remaining")

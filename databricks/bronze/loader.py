@@ -27,7 +27,7 @@ def run_bronze_load(
         ingestion_date: e.g. 2026-09-13
         spark:          Active SparkSession (Databricks runtime).
     """
-    raw_df = spark.read.text(s3_raw_path)
+    raw_df = spark.read.option("recursiveFileLookup", "true").text(s3_raw_path)
 
     if raw_df.isEmpty():
         print(f"[bronze] SKIP {resource_type}: no raw files at {s3_raw_path}")

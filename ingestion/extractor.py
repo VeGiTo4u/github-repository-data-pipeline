@@ -157,7 +157,7 @@ def extract_pr_details(
     log.info(f"Extracting details for {len(pr_numbers)} PRs in {repo_full_name}")
 
     def pr_detail_generator():
-        chunk_size = 50
+        chunk_size = 15
         owner, name = repo_full_name.split("/")
         
         for i in range(0, len(pr_numbers), chunk_size):
