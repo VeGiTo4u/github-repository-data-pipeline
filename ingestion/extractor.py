@@ -5,7 +5,6 @@ from ingestion.repo_config import get_throttle_threshold, get_estimated_volume
 from ingestion.logger import get_logger
 from ingestion.s3_writer import stream_records_to_s3
 import json
-import tempfile
 import os
 
 # GitHub API endpoints per resource type
@@ -105,32 +104,18 @@ def extract_repository_metadata(
                         repo_full_name=repo_full_name,
                     )
             
-            if resource_type in {"issues", "pull_requests", "releases"}:
-                # Stream directly to S3 for paginated resources
-                record_count, _ = stream_records_to_s3(
-                    records=envelope_generator(),
-                    s3_key_prefix=s3_key_prefix,
-                    bucket=s3_bucket,
-                    aws_access_key_id=aws_access_key_id,
-                    aws_secret_access_key=aws_secret_access_key,
-                    aws_region=aws_region,
-                    run_id=extraction_run_id,
-                )
-                if record_count == 0:
-                    log.info(f"0 records extracted for {resource_type} ({repo_full_name})")
-                results.append((None, s3_key_prefix, resource_type))
-            else:
-                # Local tempfile for single-object resources
-                with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tf:
-                    record_count = 0
-                    for envelope in envelope_generator():
-                        tf.write(json.dumps(envelope) + "\n")
-                        record_count += 1
-                    tf_name = tf.name
-                if record_count == 0:
-                    log.info(f"0 records extracted for {resource_type} ({repo_full_name})")
-                log.info(f"Extracted {resource_type} for {repo_full_name}: {record_count} records to {tf_name}")
-                results.append((tf_name, s3_key, resource_type))
+            record_count, _ = stream_records_to_s3(
+                records=envelope_generator(),
+                s3_key_prefix=s3_key_prefix,
+                bucket=s3_bucket,
+                aws_access_key_id=aws_access_key_id,
+                aws_secret_access_key=aws_secret_access_key,
+                aws_region=aws_region,
+                run_id=extraction_run_id,
+            )
+            if record_count == 0:
+                log.info(f"0 records extracted for {resource_type} ({repo_full_name})")
+            results.append((None, s3_key_prefix, resource_type))
                 
         except Exception as e:
             log.error(f"Failed extracting {resource_type} for {repo_full_name}: {e}")

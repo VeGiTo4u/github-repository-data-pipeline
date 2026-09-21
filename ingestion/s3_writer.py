@@ -3,58 +3,9 @@ import boto3
 from botocore.config import Config
 from ingestion.logger import get_logger
 
-
-def write_raw_to_s3(
-    temp_file_path: str,
-    s3_key: str,
-    bucket: str,
-    aws_access_key_id: str | None = None,
-    aws_secret_access_key: str | None = None,
-    aws_region: str = "us-east-1",
-    run_id: str | None = None,
-) -> str:
-    """Writes a JSON Lines tempfile to the S3 raw zone.
-    We use explicit key paths so that a re-run on the same ingestion_date idempotently 
-    overwrites the file rather than accumulating duplicates.
-
-    Args:
-        temp_file_path: Path to the local JSON Lines file.
-        s3_key: The destination S3 key.
-        bucket: S3 bucket name.
-        aws_access_key_id: Optional — if None, uses boto3 default credential chain.
-        aws_secret_access_key: Optional — same as above.
-        aws_region: AWS region.
-        run_id: For structured logging.
-
-    Returns:
-        The S3 key that was written.
-    """
-    log = get_logger(__name__, run_id=run_id)
-
-    client_kwargs = {"region_name": aws_region}
-    if aws_access_key_id and aws_secret_access_key:
-        client_kwargs["aws_access_key_id"] = aws_access_key_id
-        client_kwargs["aws_secret_access_key"] = aws_secret_access_key
-
-    # ponytail: handle temporary connection drops to S3
-    retry_config = Config(retries={"max_attempts": 10, "mode": "standard"})
-    s3 = boto3.client("s3", config=retry_config, **client_kwargs)
-
-    s3.upload_file(
-        Filename=temp_file_path,
-        Bucket=bucket,
-        Key=s3_key,
-        ExtraArgs={"ContentType": "application/x-ndjson"},
-    )
-
-    log.info(f"Wrote s3://{bucket}/{s3_key} from {temp_file_path}")
-    return s3_key
-
-
 # ponytail: chunk size trades off S3 PUT count vs resilience — 5000 records
 # (~5-10 MB) is small enough for fast uploads, large enough to avoid thousands of PUTs
 STREAM_CHUNK_SIZE = 5000
-
 
 def stream_records_to_s3(
     records,

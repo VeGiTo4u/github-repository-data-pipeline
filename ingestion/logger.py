@@ -39,13 +39,4 @@ def get_logger(name: str, run_id: str | None = None) -> logging.Logger:
         logger.setLevel(logging.INFO)
 
     # Attach run_id so every message from this logger includes it
-    old_factory = logger.makeRecord.__func__ if hasattr(logger.makeRecord, '__func__') else None
-
-    class _RunIdAdapter(logging.LoggerAdapter):
-        def process(self, msg, kwargs):
-            kwargs.setdefault("extra", {})
-            kwargs["extra"]["run_id"] = run_id
-            return msg, kwargs
-
-    adapter = _RunIdAdapter(logger, {"run_id": run_id})
-    return adapter
+    return logging.LoggerAdapter(logger, {"run_id": run_id})
