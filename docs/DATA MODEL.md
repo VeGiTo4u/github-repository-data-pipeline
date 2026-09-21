@@ -16,6 +16,9 @@ The pipeline uses a multi-hop (Medallion) architecture implemented via dbt:
 *   **Accumulating Snapshot Fact Tables**: Instead of tracking every event (opened, merged, closed) as separate rows, `fact_issues` and `fact_pull_requests` maintain a single row per entity that updates as it progresses through its lifecycle. This makes aggregations like "time to merge" drastically simpler.
 *   **Point-in-Time Joins**: Fact tables join to `dim_repositories` (a Type 2 SCD) using the event's `created_at` timestamp against the repository's `valid_from` and `valid_to` windows. This ensures facts are linked to the repository's exact state (e.g., star count) at the time the issue/PR was created.
 *   **Data Quality Quarantining**: Bad data is flagged and quarantined in Silver, guaranteeing that the Gold presentation layer only serves trustworthy, clean data.
+*   **End-to-End Lineage Tracking**: Every layer retains ingestion timestamps (`_bronze_ingest_ts`, `_gold_update_ts`) and the unique `_extraction_run_id`. This allows precise auditing of when a specific data point was ingested from the API and transformed into Gold.
+*   **GraphQL Code-Level Enrichment**: While core issues and pull requests come from the REST API, `fact_pull_requests` is heavily enriched with code-level details (additions, deletions, changed files) extracted via batched GraphQL queries.
+*   **Hard Deletes Limitation (Gotcha)**: Because the raw extraction relies on the `since` parameter for efficiency, entities that are hard-deleted on GitHub are not captured by the delta. Downstream SCD2 snapshots will represent these entities as permanently open/active.
 
 ---
 
