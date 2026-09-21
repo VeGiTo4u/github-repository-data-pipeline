@@ -30,11 +30,15 @@ with DAG(
 
     def _extract_and_load_repo(repo: str, **context):
         """Extracts and loads a single repository.
-        We isolate this into a mapped task so that a rate-limit error or failure in 
-        one repository does not crash the entire DAG, allowing other repos to succeed."""
+        Captures the extraction boundary timestamp before extraction begins
+        so watermarks represent the actual source boundary, not clock time
+        of a later task."""
         from ingestion.extractor import extract_repository_metadata, extract_pr_details
         from airflow.hooks.base import BaseHook
         import os
+
+        # --- Capture extraction boundary BEFORE extraction begins ---
+        extraction_boundary = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # --- AWS credentials ---
         try:
@@ -87,7 +91,8 @@ with DAG(
                 aws_region=aws_region,
             )
 
-        # Watermark advancement moved downstream after Bronze succeeds
+        # Return extraction boundary via XCom for downstream watermark commit
+        return {"repo": repo, "extraction_boundary": extraction_boundary}
 
 
 
@@ -144,13 +149,17 @@ with DAG(
 
     def _advance_watermarks(**context):
         from airflow.models import Variable
-        from ingestion.repo_config import REPO_REGISTRY
-        # We advance to the time this task runs. A 10-minute overlap handles minor skews.
-        current_run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        _repo_list = Variable.get("repo_list", deserialize_json=True, default_var=list(REPO_REGISTRY.keys()))
-        for repo in _repo_list:
-            repo_slug = repo.replace("/", "_")
-            Variable.set(f"watermark_{repo_slug}", current_run_ts)
+        import json
+        # Read extraction boundaries from XCom (pushed by each extract_repo task)
+        ti = context["ti"]
+        boundaries = ti.xcom_pull(task_ids="extract_repo", key="return_value")
+        if boundaries:
+            for entry in boundaries:
+                if entry and isinstance(entry, dict):
+                    repo = entry["repo"]
+                    extraction_boundary = entry["extraction_boundary"]
+                    repo_slug = repo.replace("/", "_")
+                    Variable.set(f"watermark_{repo_slug}", extraction_boundary)
 
     advance_watermarks = PythonOperator(
         task_id="advance_watermarks",

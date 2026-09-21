@@ -264,7 +264,7 @@ streamlit run app.py
 
 The ingestion module extracts data from the GitHub API with several production-hardened patterns:
 
-- **Dynamic Task Mapping**: Each repository is processed by an independent Airflow task instance, providing fault isolation — a rate-limit failure on `microsoft/vscode` doesn't block `duckdb/duckdb`.
+- **Dynamic Task Mapping**: Each repository is processed by an independent Airflow task instance, enabling parallel extraction and retry isolation at the task-instance level. Downstream Bronze processing intentionally requires the complete mapped extraction stage to succeed, forming an all-or-nothing daily batch design.
 - **Generator-Based Streaming**: `GitHubClient.get()` yields records one page at a time via Python generators, keeping memory footprint at exactly 1 API page (~100 records) regardless of total volume. This prevents OOM on repos with 170K+ issues.
 - **Chunked S3 Uploads**: Large paginated resources (issues, PRs, releases) are streamed directly to S3 in 5,000-record part files via `stream_records_to_s3()`, avoiding the need to hold the full dataset in memory.
 - **Cooperative Throttling**: A tier-based system (`repo_config.py`) assigns API budget thresholds per repository size. Large repos trigger a 1-second cooperative slowdown before exhausting the shared rate limit, preventing starvation of smaller repos.

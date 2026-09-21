@@ -115,10 +115,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Gotcha:** Incremental extraction uses the `since` API parameter for issues and PRs. If a record is hard-deleted on GitHub, the `since` delta will never see it.
 - **Consequence:** Your Silver SCD2 (`silver_snapshots`) will show that issue/PR as active/open forever. Acknowledge this limitation in downstream dashboards, or schedule periodic full-refresh reconciliations.
 
-**Safe File I/O & Extraction Integrity:**
-- Temporary extraction files must always explicitly use `encoding="utf-8"` to prevent localized decoding crashes on irregular unicode.
-- Ensure S3 multi-part uploads are properly aborted on failure using a `try/except/finally` block to prevent incomplete parts from lingering.
-- High-water marks (`Variable.set("watermark...")`) should be saved *before* external uploads (like S3) so that transient upload failures don't trigger massive redundant re-fetches from API source systems on retry.
+**S3 Streaming & Watermark Integrity:**
+- Records are streamed directly to S3 via `boto3` — there are no local temporary files. Ensure S3 multi-part uploads are properly handled on failure to prevent incomplete parts from lingering.
+- The extraction boundary timestamp is captured *before* extraction begins and committed as the watermark only *after* Bronze loading succeeds. This ensures the watermark represents the actual source data boundary, not the time of a later task.
+- Never advance watermarks before downstream processing (Bronze) has confirmed success. A failed Bronze load must not result in skipped data on the next run.
 
 **dbt-fusion Compatibility:**
 - When defining YAML generic tests (e.g. `relationships`), always nest parameters (like `to`, `field`) under an `arguments:` dictionary to support `dbt-fusion`'s strict parsing mode (resolves `dbt1159`).

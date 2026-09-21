@@ -82,7 +82,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Reason:**
 - **Atomicity:** Airflow `Variable.set()` on a scalar key is atomic at the database level. With 3 parallel tasks, there is no read-modify-write race — each task writes only its own Variable.
-- **Failure isolation:** If `kubernetes/kubernetes` fails halfway through a 4-hour backfill due to rate limits or network errors, other successfully completed repositories (e.g., `duckdb/duckdb`) still get their watermarks advanced.
+- **Failure isolation:** Each task instance can independently retry without affecting other repos' extraction. However, the downstream pipeline (Bronze → dbt) uses an all-or-nothing design: watermarks only advance after the complete extraction stage and Bronze load succeed. This ensures no repo's watermark advances for data that hasn't reached Bronze.
 - On the next run, the failed repository resumes its backfill, while successful ones only fetch the fast incremental delta.
 
 **Alternatives Discussed:**
@@ -199,14 +199,14 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - **Transactional Fact Tables:** Rejected because tracking every GitHub event state change as an immutable ledger makes BI aggregations (e.g., "time to merge") extremely complex to write.
-- **SCD2 Dimensions in Gold:** We implemented Type 2 SCD tracking for `dim_repositories` based on a `valid_from` and `valid_to` snapshot strategy. Fact tables (`fact_issues` and `fact_pull_requests`) perform **Point-in-Time Joins** against the `dim_repositories` table. This guarantees that an issue or PR is linked to the repository's exact metadata state (e.g., its star count or name) precisely at the time the event occurred (`created_at` or `updated_at` within the validity window).
+- **SCD2 Dimensions in Gold (Observation-Time):** We implemented Type 2 SCD tracking for `dim_repositories` based on a `valid_from` and `valid_to` snapshot strategy. Fact tables (`fact_issues` and `fact_pull_requests`) perform **Point-in-Time Joins** against the `dim_repositories` table. These joins associate facts with the latest available observed repository state covering the event timestamp. This should not be interpreted as a complete reconstruction of GitHub's historical metadata — it represents repository states as observed by successive pipeline snapshots.
 
-## 15. S3 Tempfile Extraction Integrity
-**Decision:** All local temporary files used for accumulating records before S3 upload are wrapped in `with` context managers and explicitly specify `encoding="utf-8"`. The repository watermark is advanced **before** the final S3 upload loop.
+## 15. S3 Streaming Extraction & Watermark Semantics
+**Decision:** Records are streamed directly from the GitHub API generator into S3 multipart uploads via `boto3` — no local temporary files are used. The extraction boundary timestamp is captured *before* extraction begins and committed as the watermark only *after* Bronze loading succeeds.
 **Reason:**
-- Prevents file descriptor leaks if the disk fills up or the API crashes mid-extraction.
-- Enforcing UTF-8 ensures emojis or non-standard characters in GitHub issues/PRs don't crash the pipeline on servers with a different default locale.
-- Saving the watermark *before* S3 upload ensures that if an AWS S3 API failure (e.g. 503) crashes the task, the next Airflow retry will not redundantly hammer the GitHub API to re-download the data. It will simply retry the upload (or, in the current design, skip safely since `since` is already advanced).
+- Eliminates local disk as a failure point and reduces container storage requirements.
+- Capturing the extraction boundary at the start of extraction (not at watermark commit time) ensures the watermark accurately represents the source data boundary, preventing gaps when combined with the 10-minute safety overlap window.
+- Advancing watermarks only after Bronze success guarantees no data is lost if the pipeline fails between extraction and Bronze loading.
 
 ## 16. GraphQL Batch Query Fallback
 **Decision:** The `pr_details` extraction batches 15 pull requests into a single GraphQL query using aliases. If the batch query fails (e.g., due to a single "poisoned" or deleted PR causing a resolution error), the extractor falls back to querying the 15 PRs individually in a loop.
