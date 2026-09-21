@@ -7,6 +7,7 @@ import streamlit as st
 
 
 @st.cache_resource
+@st.cache_resource
 def get_connection() -> duckdb.DuckDBPyConnection:
     """Returns a singleton DuckDB connection.
     Cached via Streamlit to avoid the overhead of re-initializing the in-memory database 

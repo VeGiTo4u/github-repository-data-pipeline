@@ -16,3 +16,6 @@ Phase-2.md
 # Virtual environment in dbt
 dbt/.venv/
 streamlit_app/.streamlit/secrets.toml
+
+# Ignore interview prep notes and scratch files
+*interview_prep*

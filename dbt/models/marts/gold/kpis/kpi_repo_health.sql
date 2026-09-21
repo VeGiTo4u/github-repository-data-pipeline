@@ -41,6 +41,8 @@ select
     coalesce(p.total_prs, 0) as total_prs,
     coalesce(p.open_prs, 0) as open_prs,
     p.median_time_to_merge_hours,
+    (coalesce(i.total_issues, 0) - coalesce(i.open_issues, 0)) / nullif(i.total_issues, 0) as closed_to_open_issue_ratio,
+    (coalesce(p.total_prs, 0) - coalesce(p.open_prs, 0)) / nullif(p.total_prs, 0) as merged_pr_ratio,
     (coalesce(i.issue_contributors, 0) + coalesce(p.pr_contributors, 0)) as approximate_total_contributors
 from repos r
 left join issues i on r.repo_id = i.repo_id

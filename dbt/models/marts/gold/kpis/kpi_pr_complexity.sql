@@ -37,6 +37,8 @@ select
     p.changed_files,
     p.commits_count,
     p.total_lines_changed,
+    p.additions / nullif(p.total_lines_changed, 0) as additions_ratio,
+    p.deletions / nullif(p.total_lines_changed, 0) as deletions_ratio,
     case
         when p.total_lines_changed < 100 then 'Small'
         when p.total_lines_changed >= 100 and p.total_lines_changed < 500 then 'Medium'
