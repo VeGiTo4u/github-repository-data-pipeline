@@ -1,4 +1,7 @@
-"""GitHub Repository Analytics Dashboard — powered by DuckDB + S3 Parquet."""
+"""GitHub Repository Analytics Dashboard.
+We decouple the presentation layer from the data warehouse by exporting Gold tables to S3 Parquet 
+and querying them with DuckDB. This architecture provides sub-second interactive latency for the 
+dashboard without incurring the high, persistent compute costs of a live warehouse connection."""
 
 import streamlit as st
 import plotly.express as px

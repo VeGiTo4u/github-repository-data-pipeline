@@ -1,7 +1,7 @@
-"""Generic Bronze loader — reads raw JSON from S3, lands into Bronze Delta tables.
-
-No business logic, no DQ checks. Bronze is a faithful landing zone per Medallion.
-Row counts come from Delta Log transaction metrics, not .count().
+"""Generic Bronze loader.
+We enforce the Medallion architecture strictly here: Bronze is a 1:1 faithful landing 
+zone for raw JSON. We do not apply any Data Quality checks or business logic here so 
+that if downstream transformations fail, we never have to re-query the GitHub API.
 """
 
 from pyspark.sql.functions import current_timestamp, col, get_json_object
@@ -119,7 +119,10 @@ def run_all_bronze_loads(
 
 
 def _log_delta_metrics(spark, s3_bronze_path: str, resource_type: str) -> None:
-    """Reads the last Delta Log entry to log write metrics without scanning the table."""
+    """Reads the last Delta Log entry to log write metrics.
+    We read `numOutputRows` directly from the Delta transaction log instead of calling 
+    `.count()` on the DataFrame. This prevents Spark from running a full table scan just 
+    to log how many rows were written, saving significant compute time."""
     try:
         dt = DeltaTable.forPath(spark, s3_bronze_path)
         history = dt.history(1).select("operationMetrics").collect()

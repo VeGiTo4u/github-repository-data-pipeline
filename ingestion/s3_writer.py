@@ -13,9 +13,9 @@ def write_raw_to_s3(
     aws_region: str = "us-east-1",
     run_id: str | None = None,
 ) -> str:
-    """Writes a JSON Lines tempfile to S3 raw zone (Phase-1.md Section 8.3).
-
-    Idempotency: same key on re-run = overwrite (PutObject to same key).
+    """Writes a JSON Lines tempfile to the S3 raw zone.
+    We use explicit key paths so that a re-run on the same ingestion_date idempotently 
+    overwrites the file rather than accumulating duplicates.
 
     Args:
         temp_file_path: Path to the local JSON Lines file.
@@ -66,14 +66,10 @@ def stream_records_to_s3(
     run_id: str | None = None,
     chunk_size: int = STREAM_CHUNK_SIZE,
 ) -> tuple[int, list[str]]:
-    """Streams envelope records directly to S3 as part files.
-
-    Buffers `chunk_size` records, writes each chunk as a part file:
-        {s3_key_prefix}/part_001.json, part_002.json, ...
-
-    Already-uploaded parts survive if a later page fails — Airflow retry
-    resumes extraction but stale parts from previous runs are harmless
-    because Bronze → Staging deduplicates via row_number().
+    """Streams records to S3 in manageable chunks.
+    We write small part-files instead of holding everything in memory. This ensures 
+    that if a long-running extraction crashes midway, Airflow can retry without 
+    losing the successfully uploaded parts or OOMing the container.
 
     Args:
         records:    Generator/iterable of envelope dicts.

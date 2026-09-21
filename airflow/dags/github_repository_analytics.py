@@ -1,14 +1,8 @@
-"""GitHub Repository Analytics DAG — orchestration only.
-
-Extracts metadata from multiple GitHub repositories in parallel using
-Airflow Dynamic Task Mapping. Each repo gets an independent mapped task
-with its own watermark for incremental extraction.
-
-After all repos are extracted to S3 raw, triggers a Databricks serverless
-job to load raw data into Bronze Delta tables, then runs dbt build to
-process the Silver layer (staging → intermediate → snapshots → marts + tests).
-
-Zero business logic in this file.
+"""GitHub Repository Analytics DAG.
+We orchestrate using Airflow to leverage Dynamic Task Mapping, allowing us to ingest 
+multiple repositories in parallel. We enforce a strict separation of concerns here: 
+Airflow only handles scheduling and retries, while all business logic resides in 
+the ingestion package or dbt, preventing vendor lock-in to the orchestrator.
 """
 from airflow import DAG
 from airflow.operators.bash import BashOperator
@@ -35,7 +29,9 @@ with DAG(
 ) as dag:
 
     def _extract_and_load_repo(repo: str, **context):
-        """One mapped-task instance per repo — independent watermark, independent failure."""
+        """Extracts and loads a single repository.
+        We isolate this into a mapped task so that a rate-limit error or failure in 
+        one repository does not crash the entire DAG, allowing other repos to succeed."""
         from ingestion.extractor import extract_repository_metadata, extract_pr_details
         from ingestion.s3_writer import write_raw_to_s3
         from airflow.hooks.base import BaseHook

@@ -7,8 +7,9 @@ class GitHubClientError(Exception):
     """Raised when the GitHub API returns a non-retryable error."""
 
 class GitHubClient:
-    """Handles GitHub API requests with auth, pagination, rate-limit handling,
-    and exponential backoff on 5xx errors (Phase-1.md Section 8.1)."""
+    """Centralized GitHub HTTP client.
+    We encapsulate all requests here to guarantee consistent rate-limit backpressure,
+    preventing a single massive repo from exhausting the global API budget."""
 
     BASE_URL = "https://api.github.com"
 
@@ -44,12 +45,9 @@ class GitHubClient:
         params: dict | None = None,
         stop_predicate: Callable | None = None,
     ):
-        """Yields records from a GitHub API endpoint, handling pagination.
-
-        Streams one record at a time — memory footprint is exactly 1 page
-        regardless of total result size.
-        For single-object endpoints (e.g. /repos/owner/repo), yields one dict.
-        If stop_predicate is provided, stops when stop_predicate(record) is True.
+        """Yields records lazily.
+        By streaming records as a generator instead of returning a massive list, we prevent 
+        OOM kills in the Airflow worker when extracting repos with hundreds of thousands of issues.
         """
         # ponytail: generator instead of list accumulation — fixes OOM for large repos
         url = f"{self.BASE_URL}{endpoint}"
@@ -82,15 +80,6 @@ class GitHubClient:
             url = response.links.get("next", {}).get("url")
             # After the first request, params are encoded in the next URL
             request_params = None
-
-    def get_raw(self, endpoint: str, params: dict | None = None) -> requests.Response:
-        """Fetches a single page and returns the raw Response object.
-
-        Used by extractor/normalizer to capture HTTP metadata (status,
-        rate-limit headers) for the lineage envelope.
-        """
-        url = f"{self.BASE_URL}{endpoint}"
-        return self._request_with_retry(url, params)
 
     def post_graphql(self, query: str, variables: dict | None = None) -> requests.Response:
         """Sends a GraphQL query via POST and returns the raw Response.

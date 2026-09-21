@@ -3,7 +3,10 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-# Export Gold KPI tables to S3 as Parquet
+# Export Gold KPI tables to S3 as Parquet.
+# We export these tables so the Streamlit dashboard can query them via DuckDB.
+# This decouples the presentation layer from Databricks Serverless, meaning dashboard
+# viewers don't incur persistent or per-query compute costs on the warehouse.
 
 dbutils.widgets.text("s3_bucket", "")
 dbutils.widgets.text("catalog", "")

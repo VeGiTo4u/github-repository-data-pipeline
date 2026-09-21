@@ -8,7 +8,11 @@ models:
         tests: [unique, not_null]
 
   - name: stg_github_issues
-    description: "Flattened issues from Bronze, incremental high-water-mark, deduped"
+    description: >
+      Flattened issues from Bronze. 
+      Why: We keep staging as pure views to act as an abstraction layer over Bronze.
+      If the raw JSON schema changes, we only update the staging view, insulating 
+      the rest of the pipeline from upstream breakages.
     columns:
       - name: issue_id
         tests: [unique, not_null]

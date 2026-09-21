@@ -1,7 +1,7 @@
-"""Canonical repository configuration for the ingestion pipeline.
-
-Centralizes repo metadata the pipeline needs: tier-based throttle
-thresholds and estimated volumes for meaningful progress logging.
+"""Canonical repository configuration.
+We use tier-based configurations instead of hard-coded stops so large repositories 
+(like vscode) cooperatively throttle their API usage, ensuring they don't starve 
+smaller repositories of the shared API budget.
 """
 
 REPO_REGISTRY = {

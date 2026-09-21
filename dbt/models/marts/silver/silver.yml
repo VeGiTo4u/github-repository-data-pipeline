@@ -3,9 +3,11 @@ version: 2
 models:
   - name: repositories_current
     description: >
-      Current-state view of repositories (SCD2, dbt_valid_to is null) with data quality tagging.
-      Clean records from snapshot + quarantined records from intermediate layer.
-      Downstream Gold should filter WHERE is_quarantined = false.
+      Current-state view of repositories (SCD2).
+      Why: We create `_current` views to simplify querying for downstream consumers 
+      who don't want to deal with `dbt_valid_from` and `dbt_valid_to` logic. 
+      We also UNION the quarantined records here so engineers can inspect malformed 
+      data directly in the data warehouse without querying the raw JSON layer.
     columns:
       - name: repository_id
         tests: [unique, not_null]

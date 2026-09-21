@@ -7,7 +7,9 @@
 # MAGIC # Bronze Load — All Resource Types
 # MAGIC
 # MAGIC Thin entry point executed by Databricks (triggered from Airflow).
-# MAGIC Imports `run_all_bronze_loads` from the repo via Databricks Repos.
+# MAGIC We keep notebooks as thin as possible (just parsing widgets and calling a function).
+# MAGIC This allows all the actual business logic to live in standard Python files (.py) 
+# MAGIC which can be easily tested, version-controlled, and code-reviewed.
 
 # COMMAND ----------
 

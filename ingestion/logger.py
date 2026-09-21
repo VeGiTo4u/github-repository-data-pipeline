@@ -23,11 +23,14 @@ class _JsonFormatter(logging.Formatter):
 
 def get_logger(name: str, run_id: str | None = None) -> logging.Logger:
     """Returns a structured JSON-lines logger.
-
+    We enforce JSON formatting so downstream observability tools (like DataDog or 
+    CloudWatch) can easily index the logs without complex regex parsing.
+    
     Args:
         name: Logger name (typically __name__ of the calling module).
         run_id: Airflow run_id or a UUID for local runs.
     """
+    
     logger = logging.getLogger(name)
     if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)

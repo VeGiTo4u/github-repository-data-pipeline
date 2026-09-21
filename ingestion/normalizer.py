@@ -14,10 +14,9 @@ def build_lineage_envelope(
     ingestion_date: str | None = None,
     repo_full_name: str | None = None,
 ) -> dict:
-    """Wraps a single GitHub API record in a lineage envelope for JSON Lines.
-
-    The raw payload is stored untouched under the 'data' key.
-    Lineage metadata sits alongside it under the 'lineage' key.
+    """Wraps a raw record in a metadata envelope.
+    We do this at the edge of ingestion so every single row carries its extraction context 
+    (run ID, timestamp, API status), making it completely auditable throughout the pipeline.
     """
     now = datetime.now(timezone.utc)
     payload_bytes = json.dumps(record, sort_keys=True).encode("utf-8")

@@ -3,9 +3,11 @@ version: 2
 models:
   - name: int_repositories_validated
     description: >
-      DQ-validated repositories. Full-population from staging view.
-      Records failing any DQ rule have is_quarantined = true and dq_failed_rules
-      lists which rules failed. Only clean records flow to the SCD2 snapshot.
+      DQ-validated repositories. 
+      Why: We use the intermediate layer to perform Data Quality (DQ) quarantining 
+      before records enter the snapshot. This prevents malformed data from corrupting 
+      the historical SCD2 state, while keeping the bad data visible via the 
+      `_current` views for auditing.
     columns:
       - name: repository_id
         tests: [not_null]

@@ -1,6 +1,7 @@
 """Metadata-driven resource registry for the Bronze layer.
-
-Adding a new resource type = one dict entry here, zero code changes elsewhere.
+We use a registry pattern instead of hardcoding resource types in the loader script. 
+This allows us to add new GitHub endpoints (like 'commits' or 'comments') simply 
+by adding a dictionary entry, isolating configuration from execution logic.
 """
 
 BRONZE_REGISTRY = {

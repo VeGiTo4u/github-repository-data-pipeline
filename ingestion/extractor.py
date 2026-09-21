@@ -28,7 +28,10 @@ def extract_repository_metadata(
     aws_secret_access_key: str | None = None,
     aws_region: str = "us-east-1",
 ) -> tuple[list[tuple[str | None, str, str]], list[int]]:
-    """Extracts all resource types for a single repo.
+    """Extracts core resources for a single repository.
+    We isolate this into a per-repo function so Airflow can map tasks dynamically. 
+    This ensures failures in one repository (e.g. rate limits) don't crash or block 
+    the ingestion of the others.
 
     Args:
         repo_full_name: e.g. "apache/spark"
@@ -147,7 +150,10 @@ def extract_pr_details(
     aws_secret_access_key: str | None = None,
     aws_region: str = "us-east-1",
 ) -> tuple[int, list[str]]:
-    """Extracts code-level details (additions, deletions, etc) for specific PRs."""
+    """Extracts code-level PR details (additions/deletions) via GraphQL.
+    We separate this from the main REST extraction because fetching lines-changed 
+    requires a different API, and batching GraphQL queries drastically reduces 
+    our rate-limit consumption compared to individual REST calls."""
     log = get_logger(__name__, run_id=extraction_run_id)
     throttle = get_throttle_threshold(repo_full_name)
     client = GitHubClient(token=github_token, run_id=extraction_run_id, throttle_threshold=throttle)
