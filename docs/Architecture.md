@@ -49,7 +49,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 4. Multi-Repo Scaling & Concurrency (Dynamic Task Mapping)
 
-**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is exactly 1 API page (100 records) regardless of total result size. The extractor accumulates yielded records into a single tempfile per (resource_type, repo), so S3 still receives one file per resource per repo per run.
+**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is exactly 1 API page (100 records) regardless of total result size. The extractor streams these directly into S3 multipart uploads via `boto3`, completely bypassing the local file system.
 
 **Reason:** 
 - A serial loop would take too long for large backfills. Unbounded parallel tasks would instantly exhaust the GitHub API rate limit.
@@ -93,14 +93,13 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 7. Least-Privilege IAM Policy
 
-**Decision:** The Airflow ingestion IAM user has `s3:PutObject` and `s3:GetObject` on `raw/*`, but explicitly **lacks `s3:DeleteObject`**.
+**Decision:** The Airflow ingestion IAM user has `s3:PutObject`, `s3:GetObject`, and explicitly **requires `s3:DeleteObject`** on `raw/*`.
 
 **Reason:** 
-- Ingestion only ever appends new files or overwrites existing ones (idempotency). It should never delete data.
-- Protects the data lake from accidental recursive deletions via Airflow bugs. Housekeeping (`VACUUM`/`OPTIMIZE`) is the responsibility of Databricks credentials on Bronze/Silver, not Airflow ingestion.
+- Ingestion must purge existing partial parts for a given `(resource, date, repo)` prefix before writing new parts during an Airflow retry. Without `DeleteObject`, retries would silently accumulate partial parts, causing duplicate data in downstream Bronze loads since Databricks reads the entire prefix.
 
 **Alternatives Discussed:**
-- **Full S3 Admin access:** Easier to setup and allows automated cleanup. Rejected because it violates security best practices and increases the blast radius of a compromised or buggy ingestion script.
+- **No `s3:DeleteObject` (Append-Only):** Enforces stricter least-privilege, but breaks idempotency on retries since Airflow cannot clean up its own failed uploads. Rejected because data correctness is paramount.
 
 ---
 

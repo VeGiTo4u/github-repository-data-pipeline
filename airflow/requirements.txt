@@ -1,0 +1,10 @@
+# Airflow specific dependencies
+# Includes ingestion dependencies since Airflow runs the ingestion code
+requests>=2.31.0
+boto3>=1.34.0
+python-dotenv>=1.0.0
+
+# Airflow Databricks providers
+apache-airflow-providers-databricks==5.5.0
+dbt-databricks
+databricks-sdk

@@ -255,11 +255,15 @@ PLOTLY_LAYOUT = dict(
 COLORS = ["#6366f1", "#8b5cf6", "#14b8a6", "#f59e0b", "#f43f5e", "#06b6d4", "#a78bfa"]
 
 
+# ── Fetch Repo List ───────────────────────────────────────────────────────────
+repos = get_repo_list()
+repo_count = len(repos)
+
 # ── Header ───────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <div class="dashboard-header">
     <h1>GitHub Repository Analytics</h1>
-    <p>Real-time insights from 10 open-source repositories · Data refreshed daily</p>
+    <p>Real-time insights from {repo_count} open-source repositories · Data refreshed daily</p>
     <div class="header-badges">
         <span class="header-badge badge-duckdb">DuckDB</span>
         <span class="header-badge badge-airflow">Airflow</span>
@@ -272,7 +276,6 @@ st.markdown("""
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### Filters")
-    repos = get_repo_list()
     selected_repo = st.selectbox(
         "Repository",
         options=["All Repositories"] + repos,
@@ -330,8 +333,8 @@ with tab_overview:
         c4.metric("Open PRs", f"{open_prs:,}")
 
         c5, c6, c7, c8 = st.columns(4)
-        c5.metric("Median Close Time", f"{avg_close:,.0f} hrs" if pd.notna(avg_close) else "—")
-        c6.metric("Median Merge Time", f"{avg_merge:,.0f} hrs" if pd.notna(avg_merge) else "—")
+        c5.metric("Avg Repo Median Close", f"{avg_close:,.0f} hrs" if pd.notna(avg_close) else "—")
+        c6.metric("Avg Repo Median Merge", f"{avg_merge:,.0f} hrs" if pd.notna(avg_merge) else "—")
         c7.metric("Contributors", f"{total_contribs:,}")
         c8.metric("Repositories", f"{len(df_health):,}")
 

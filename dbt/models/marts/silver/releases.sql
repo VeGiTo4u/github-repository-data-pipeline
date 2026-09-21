@@ -24,6 +24,7 @@ select
     _bronze_ingest_ts,
     _extraction_run_id,
     _ingestion_date,
+    _repo_full_name,
     dq_failed_rules,
     is_quarantined
 from {{ ref('int_releases_validated') }}

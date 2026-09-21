@@ -44,15 +44,16 @@ def stream_records_to_s3(
 
     # ponytail: delete existing objects in prefix to prevent dangling parts on retry
     try:
-        paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=bucket, Prefix=s3_key_prefix):
-            if "Contents" in page:
-                delete_keys = [{"Key": obj["Key"]} for obj in page["Contents"]]
-                if delete_keys:
-                    s3.delete_objects(Bucket=bucket, Delete={"Objects": delete_keys})
-                    log.info(f"Purged {len(delete_keys)} old parts from s3://{bucket}/{s3_key_prefix}")
+        s3_resource = boto3.resource("s3", config=retry_config, **client_kwargs)
+        bucket_obj = s3_resource.Bucket(bucket)
+        
+        objects_to_delete = list(bucket_obj.objects.filter(Prefix=s3_key_prefix))
+        if objects_to_delete:
+            bucket_obj.objects.filter(Prefix=s3_key_prefix).delete()
+            log.info(f"Purged {len(objects_to_delete)} old parts from s3://{bucket}/{s3_key_prefix}")
     except Exception as e:
-        log.warning(f"Failed to purge old parts in {s3_key_prefix}: {e}")
+        log.error(f"Failed to purge old parts in {s3_key_prefix}: {e}")
+        raise e
 
     buffer = []
     part_num = 0

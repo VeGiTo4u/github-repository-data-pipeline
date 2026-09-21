@@ -72,9 +72,10 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Idempotency:** Re-runs for a given date replace the data at the S3 location (via partition overwrite or `replaceWhere` in Databricks) rather than duplicating rows.
 - **Data Organization:** "Organize by how you query, not by how you ingest." The S3 `raw/` prefix is partitioned by resource type and date (`raw/{resource_type}/ingestion_date=.../{repo}.json`), making downstream scanning highly efficient.
 - **Rate Limit Budgeting:** GitHub API rate limits (5,000 req/hr) are a hard constraint. The pipeline uses cooperative throttling in the `GitHubClient`, Airflow Dynamic Task Mapping concurrency limits (`max_active_tasks=3`), and per-repo watermark tracking to survive API exhaustion and resume cleanly.
-- **Streaming Extraction:** `GitHubClient.get()` is a generator that yields records one at a time (100 records per API page). The extractor writes each yielded record to a single tempfile per (resource_type, repo), so memory footprint is exactly 1 page regardless of repo size. S3 receives one file per resource per repo per run — the generator does not change the S3 file structure.
-- **Atomic Watermarks:** Per-repo watermarks use individual scalar Airflow Variables (`watermark_{repo_slug}`), not a shared JSON blob. Each parallel task reads/writes only its own Variable, eliminating read-modify-write race conditions.
-- **Security:** Credentials must never be hardcoded or logged. Use Airflow Connections/Variables in production, and a `.env` file strictly for local development testing. IAM policies are explicitly least-privilege (e.g., no `s3:DeleteObject` for the ingestion user).
+- **Streaming Extraction:** `GitHubClient.get()` is a generator that yields records one at a time (100 records per API page). The extractor streams these directly into multipart S3 uploads via `boto3`, so memory footprint is exactly 1 page regardless of repo size and no local disk tempfiles are needed.
+- **Idempotent Watermarks:** `since` parameters (watermarks) only advance *after* raw data successfully lands in the Databricks Bronze layer, avoiding data loss if the ingest/load job crashes midway.
+- **Watermark Overlap:** API timestamp queries use a 10-minute overlap window to gracefully capture delayed replica syncs from GitHub's eventual consistency. Each parallel task reads/writes only its own Variable, eliminating read-modify-write race conditions.
+- **Security:** Credentials must never be hardcoded or logged. Use Airflow Connections/Variables in production, and a `.env` file strictly for local development testing. IAM policies are explicitly least-privilege but must include `s3:DeleteObject` to allow Airflow to purge failed parts on retry for idempotency.
 
 **Bronze Layer (Medallion Architecture):**
 - **Metadata-Driven:** All 5 resource types (repositories, issues, pull_requests, releases, languages) are defined in `BRONZE_REGISTRY` (`databricks/bronze/bronze_config.py`). Adding a new resource = one config entry, zero code changes.
@@ -116,7 +117,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **Safe File I/O & Extraction Integrity:**
 - Temporary extraction files must always explicitly use `encoding="utf-8"` to prevent localized decoding crashes on irregular unicode.
-- Never manually `.close()` tempfiles without a `try/finally`. Prefer `with` blocks to prevent descriptor leaks on disk-full/API crashes.
+- Ensure S3 multi-part uploads are properly aborted on failure using a `try/except/finally` block to prevent incomplete parts from lingering.
 - High-water marks (`Variable.set("watermark...")`) should be saved *before* external uploads (like S3) so that transient upload failures don't trigger massive redundant re-fetches from API source systems on retry.
 
 **dbt-fusion Compatibility:**

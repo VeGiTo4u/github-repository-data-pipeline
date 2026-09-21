@@ -1,6 +1,8 @@
 import time
 from typing import Callable
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from ingestion.logger import get_logger
 
 class GitHubClientError(Exception):
@@ -15,6 +17,15 @@ class GitHubClient:
 
     def __init__(self, token: str, run_id: str | None = None, throttle_threshold: int = 100):
         self._session = requests.Session()
+        
+        retries = Retry(
+            total=10,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "POST"]
+        )
+        self._session.mount("https://", HTTPAdapter(max_retries=retries))
+        
         self._session.headers.update({
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -95,66 +106,48 @@ class GitHubClient:
         return self._request_with_retry(url, params=None, json_payload=json_payload)
 
     def _request_with_retry(
-        self, url: str, params: dict | None, max_retries: int = 10, json_payload: dict | None = None
+        self, url: str, params: dict | None, json_payload: dict | None = None
     ) -> requests.Response:
-        """Retries on 5xx / network errors with exponential backoff.
-        Handles rate limits (including 403 rate limit errors) by sleeping until reset.
-        Fails fast on other 4xx (real errors)."""
+        """Handles rate limits (including 403 rate limit errors) by sleeping until reset.
+        Network and 5xx errors are handled automatically by the urllib3 HTTPAdapter."""
 
-        for attempt in range(max_retries + 1):
+        while True:
+            self._wait_for_rate_limit()
+            
             try:
-                self._wait_for_rate_limit()
                 if json_payload is not None:
                     response = self._session.post(url, json=json_payload, timeout=30)
                 else:
                     response = self._session.get(url, params=params, timeout=30)
-                self._last_response = response
-
-                if response.status_code < 400:
-                    if not response.text.strip() and response.status_code != 204:
-                        self._log.warning(f"Empty {response.status_code} OK from {url}, treating as timeout")
-                    else:
-                        return response
-
-                # Rate limit 403 — sleep until reset and retry
-                remaining = response.headers.get("X-RateLimit-Remaining")
-                if response.status_code == 403 and (
-                    remaining == "0" or "rate limit" in response.text.lower()
-                ):
-                    reset_ts = int(response.headers.get("X-RateLimit-Reset", 0))
-                    wait = max(reset_ts - int(time.time()), 1) + 2
-                    self._log.warning(
-                        f"Rate limit exceeded (HTTP 403) for {url}, sleeping {wait}s until reset"
-                    )
-                    time.sleep(wait)
-                    continue
-
-                # 4xx — fail fast, don't retry
-                if 400 <= response.status_code < 500:
-                    raise GitHubClientError(
-                        f"GitHub API {response.status_code} for {url}: {response.text}"
-                    )
-
-                # 5xx — retry
-                self._log.warning(
-                    f"GitHub API 5xx ({response.status_code}) for {url}, "
-                    f"attempt {attempt + 1}/{max_retries + 1}",
-                )
-
             except requests.exceptions.RequestException as exc:
-                if attempt == max_retries:
-                    raise GitHubClientError(
-                        f"Network error after {max_retries + 1} attempts for {url}"
-                    ) from exc
+                raise GitHubClientError(f"Network error for {url}: {exc}") from exc
+
+            self._last_response = response
+
+            if response.status_code < 400:
+                if not response.text.strip() and response.status_code != 204:
+                    self._log.warning(f"Empty {response.status_code} OK from {url}, treating as timeout")
+                else:
+                    return response
+
+            # Rate limit 403 — sleep until reset and retry
+            remaining = response.headers.get("X-RateLimit-Remaining")
+            if response.status_code == 403 and (
+                remaining == "0" or "rate limit" in response.text.lower()
+            ):
+                reset_ts = int(response.headers.get("X-RateLimit-Reset", 0))
+                wait = max(reset_ts - int(time.time()), 1) + 2
                 self._log.warning(
-                    f"Network error for {url}, attempt {attempt + 1}/{max_retries + 1}: {exc}",
+                    f"Rate limit exceeded (HTTP 403) for {url}, sleeping {wait}s until reset"
                 )
+                time.sleep(wait)
+                continue
 
-            backoff = min(2 ** attempt, 60)
-            self._log.info(f"Retrying in {backoff}s...")
-            time.sleep(backoff)
-
-        raise GitHubClientError(f"Failed after {max_retries + 1} attempts for {url}")
+            # 4xx — fail fast, don't retry (unless it was a rate limit handled above)
+            if 400 <= response.status_code < 500:
+                raise GitHubClientError(
+                    f"GitHub API {response.status_code} for {url}: {response.text}"
+                )
 
     def _wait_for_rate_limit(self):
         """Inspects X-RateLimit-Remaining from the session's last response.

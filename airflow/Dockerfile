@@ -1,6 +1,5 @@
 FROM apache/airflow:2.10.5-python3.11
 
-COPY requirements.txt /requirements.txt
+COPY airflow/requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
-RUN pip install --no-cache-dir apache-airflow-providers-databricks "apache-airflow==2.10.5"
-RUN pip install --no-cache-dir dbt-databricks databricks-sdk
+RUN pip install --no-cache-dir apache-airflow-providers-databricks "apache-airflow==2.10.5" dbt-databricks databricks-sdk

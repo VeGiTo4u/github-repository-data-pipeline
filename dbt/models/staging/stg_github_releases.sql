@@ -7,7 +7,8 @@ with parsed as (
         from_json(data, 'id bigint, tag_name string, name string, draft boolean, prerelease boolean, author struct<id:bigint, login:string>, created_at string, published_at string, target_commitish string') as data,
         _bronze_ingest_ts,
         _extraction_run_id,
-        _ingestion_date
+        _ingestion_date,
+        _repo_full_name
     from {{ source('bronze', 'releases') }}
     where _ingestion_date = (
         select max(_ingestion_date)
@@ -29,7 +30,8 @@ source as (
         data.target_commitish                   as target_commitish,
         _bronze_ingest_ts,
         _extraction_run_id,
-        _ingestion_date
+        _ingestion_date,
+        _repo_full_name
     from parsed
 ),
 

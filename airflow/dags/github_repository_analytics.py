@@ -54,10 +54,11 @@ with DAG(
         ingestion_date = context["data_interval_end"].strftime("%Y-%m-%d")
 
         # --- per-repo watermark (atomic scalar Variable, no shared JSON blob) ---
-        # ponytail: one Variable per repo eliminates the read-modify-write race
         repo_slug = repo.replace("/", "_")
         since = Variable.get(f"watermark_{repo_slug}", default_var=None)
-        current_run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if since:
+            since_dt = datetime.strptime(since, "%Y-%m-%dT%H:%M:%SZ")
+            since = (since_dt - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # --- extract all resources for this repo ---
         results, pr_numbers = extract_repository_metadata(
@@ -86,10 +87,7 @@ with DAG(
                 aws_region=aws_region,
             )
 
-        # ponytail: save watermark BEFORE uploading temp files. Tempfile resources (repos, languages) 
-        # don't use 'since', so they re-fetch safely for 1 API call on retry. Streamed resources 
-        # (issues, PRs) use 'since' and are already on S3, so this prevents massive re-fetching.
-        Variable.set(f"watermark_{repo_slug}", current_run_ts)
+        # Watermark advancement moved downstream after Bronze succeeds
 
 
 
@@ -144,6 +142,21 @@ with DAG(
         execution_timeout=timedelta(hours=2),
     )
 
+    def _advance_watermarks(**context):
+        from airflow.models import Variable
+        from ingestion.repo_config import REPO_REGISTRY
+        # We advance to the time this task runs. A 10-minute overlap handles minor skews.
+        current_run_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _repo_list = Variable.get("repo_list", deserialize_json=True, default_var=list(REPO_REGISTRY.keys()))
+        for repo in _repo_list:
+            repo_slug = repo.replace("/", "_")
+            Variable.set(f"watermark_{repo_slug}", current_run_ts)
+
+    advance_watermarks = PythonOperator(
+        task_id="advance_watermarks",
+        python_callable=_advance_watermarks,
+    )
+
     # Export KPI tables to S3 as Parquet
     export_kpis = DatabricksSubmitRunOperator(
         task_id="export_kpis",
@@ -172,4 +185,4 @@ with DAG(
         },
     )
 
-    extract_repos >> run_bronze >> dbt_build >> export_kpis
+    extract_repos >> run_bronze >> advance_watermarks >> dbt_build >> export_kpis

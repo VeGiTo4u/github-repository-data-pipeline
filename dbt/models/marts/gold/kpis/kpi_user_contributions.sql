@@ -41,7 +41,7 @@ select
     r.repo_name,
     ur.repo_id,
     ur.user_id,
-    u.user_id as github_username, -- if dim_users has username, else just ID
+    u.user_login as github_username, -- if dim_users has username, else just ID
     coalesce(ui.total_issues_opened, 0) as total_issues_opened,
     coalesce(up.total_prs_opened, 0) as total_prs_opened,
     coalesce(up.total_prs_merged, 0) as total_prs_merged,
