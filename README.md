@@ -49,15 +49,15 @@ This project implements a production-grade data pipeline that extracts repositor
                             │  dbt build                                           │
                             ▼                                                      ▼
                      ┌──────────────┐     ┌──────────────────────────┐     ┌───────────────┐
-                     │   Staging    │────▶│     Intermediate (DQ)    │────▶│    Silver      │
+                     │   Staging    │────▶│     Intermediate (DQ)    │────▶│    Silver     │
                      │   (Views)    │     │  Quarantine + Watermark  │     │  (SCD2 + Δ)   │
                      └──────────────┘     └──────────────────────────┘     └───────┬───────┘
                                                                                    │
                      ┌──────────────┐     ┌──────────────────────────┐              │
                      │  Streamlit   │◀────│   S3 (Parquet Exports)   │◀─────────────┤
                      │  + DuckDB    │     │   Gold KPI Tables        │      ┌───────┴───────┐
-                     └──────────────┘     └──────────────────────────┘      │     Gold       │
-                                                                            │  (Star Schema) │
+                     └──────────────┘     └──────────────────────────┘      │     Gold      │
+                                                                            │  (Star Schema)│
                                                                             └───────────────┘
 ```
 
@@ -96,27 +96,27 @@ The pipeline implements a **Kimball-style star schema** in the Gold layer, fed b
 ### Gold Layer (Star Schema)
 
 ```
-                            ┌─────────────────┐
+                            ┌─────────────────-┐
                             │  dim_date        │
                             │  (date_key PK)   │
                             └────────┬─────────┘
                                      │
 ┌───────────────────┐    ┌───────────┴──────────┐    ┌──────────────────┐
-│  dim_repositories │    │    fact_issues        │    │    dim_users      │
+│  dim_repositories │    │    fact_issues       │    │    dim_users     │
 │  (repository_sk)  │◀───│  (issue_sk PK)       │───▶│  (user_sk PK)    │
-│  Type 2 SCD       │    │  Accumulating Snap.  │    │  Type 1           │
+│  Type 2 SCD       │    │  Accumulating Snap.  │    │  Type 1          │
 └───────────────────┘    └──────────────────────┘    └──────────────────┘
          ▲                                                    ▲
          │               ┌──────────────────────┐             │
-         └───────────────│  fact_pull_requests   │─────────────┘
-                         │  (pull_request_sk PK) │
-                         │  Accumulating Snap.   │
+         └───────────────│  fact_pull_requests  │─────────────┘
+                         │  (pull_request_sk PK)│
+                         │  Accumulating Snap.  │
                          └──────────────────────┘
 
                          ┌──────────────────────┐
-                         │   fact_releases       │
-                         │  (release_sk PK)      │
-                         │  Transactional Fact   │
+                         │   fact_releases      │
+                         │  (release_sk PK)     │
+                         │  Transactional Fact  │
                          └──────────────────────┘
 ```
 
