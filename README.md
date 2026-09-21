@@ -437,7 +437,6 @@ This project contains 17 documented Architecture Decision Records (ADRs) in [`do
 - GitHub Webhooks for near-real-time ingestion
 - Multi-PAT round-robin for higher API throughput
 - Great Expectations integration for richer DQ reporting
-- Streamlit Cloud deployment with authentication
 
 ---
 
