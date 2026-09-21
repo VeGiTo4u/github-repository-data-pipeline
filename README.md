@@ -44,37 +44,9 @@ This project implements a production-grade data pipeline that extracts repositor
 
 ## Architecture
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────────────┐     ┌───────────────┐
-│  GitHub API  │────▶│   Airflow    │────▶│     Amazon S3 (Raw)      │────▶│  Databricks   │
-│  REST + GQL  │     │  (Docker)    │     │  NDJSON, date-partitioned│     │  (Bronze Δ)   │
-└──────────────┘     └──────┬───────┘     └──────────────────────────┘     └───────┬───────┘
-                            │                                                      │
-                            │  dbt build                                           │
-                            ▼                                                      ▼
-                     ┌──────────────┐     ┌──────────────────────────┐     ┌───────────────┐
-                     │   Staging    │────▶│     Intermediate (DQ)    │────▶│    Silver     │
-                     │   (Views)    │     │  Quarantine + Watermark  │     │  (SCD2 + Δ)   │
-                     └──────────────┘     └──────────────────────────┘     └───────┬───────┘
-                                                                                   │
-                     ┌──────────────┐     ┌──────────────────────────┐              │
-                     │  Streamlit   │◀────│   S3 (Parquet Exports)   │◀─────────────┤
-                     │  + DuckDB    │     │   Gold KPI Tables        │      ┌───────┴───────┐
-                     └──────────────┘     └──────────────────────────┘      │     Gold      │
-                                                                            │  (Star Schema)│
-                                                                            └───────────────┘
-```
-
-### DAG Execution Flow
-
-```
-extract_repo (×N mapped)  ──▶  run_bronze_load  ──▶  dbt_build  ──▶  export_kpis
-     │                              │                     │               │
-     ├─ REST: repos, issues,        ├─ S3 Raw → Delta     ├─ staging      ├─ Gold tables
-     │  PRs, releases, langs        │  Bronze tables       ├─ intermediate │  → S3 Parquet
-     └─ GraphQL: PR details         └─ Unity Catalog       ├─ snapshots    └─ for DuckDB
-                                                           └─ silver/gold
-```
+<p align="center">
+  <img src="docs/images/architecture.jpg" alt="Pipeline Architecture" width="850">
+</p>
 
 ---
 
@@ -135,44 +107,9 @@ The pipeline implements a **Kimball-style star schema** in the Gold layer, fed b
 
 ### dbt Model Lineage
 
-```
-Bronze (Databricks)
-  └─▶ Staging (Views)
-       ├── stg_github_repositories
-       ├── stg_github_issues
-       ├── stg_github_pull_requests
-       ├── stg_github_pr_details
-       ├── stg_github_releases
-       └── stg_github_languages
-            └─▶ Intermediate (DQ Validation)
-                 ├── int_repositories_validated
-                 ├── int_issues_validated
-                 ├── int_pull_requests_validated
-                 ├── int_releases_validated
-                 └── int_languages_validated
-                      └─▶ Snapshots (SCD2)
-                           ├── snap_repositories
-                           ├── snap_issues
-                           └── snap_pull_requests
-                                └─▶ Silver (Current-State + History)
-                                     ├── repositories_current
-                                     ├── issues_current
-                                     ├── pull_requests_current
-                                     ├── releases
-                                     └── languages
-                                          └─▶ Gold (Star Schema)
-                                               ├── dim_repositories (SCD2)
-                                               ├── dim_users (SCD1)
-                                               ├── dim_date
-                                               ├── fact_issues
-                                               ├── fact_pull_requests
-                                               ├── fact_releases
-                                               └── KPIs
-                                                    ├── kpi_repo_health
-                                                    ├── kpi_time_series
-                                                    ├── kpi_user_contributions
-                                                    └── kpi_pr_complexity
-```
+<p align="center">
+  <img src="docs/images/dbt_lineage.jpg" alt="dbt Model Lineage DAG" width="700">
+</p>
 
 ---
 
