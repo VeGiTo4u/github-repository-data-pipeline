@@ -5,6 +5,15 @@
 
 with source as (
     select * from {{ ref('stg_github_releases') }}
+),
+
+enriched as (
+    select
+        s.*,
+        r.repository_id as repository_id
+    from source s
+    left join {{ ref('stg_github_repositories') }} r
+        on s._repo_full_name = r.full_name
 )
 
 select
@@ -16,4 +25,4 @@ select
         {'name': 'created_at_not_null',         'expr': 'created_at IS NOT NULL'},
         {'name': 'published_after_created',     'expr': 'published_at IS NULL OR published_at >= created_at'},
     ]) }}
-from source
+from enriched

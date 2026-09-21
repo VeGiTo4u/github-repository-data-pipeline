@@ -29,8 +29,8 @@ def extract_repository_metadata(
 ) -> list[int]:
     """Extracts core resources for a single repository.
     We isolate this into a per-repo function so Airflow can map tasks dynamically. 
-    This ensures failures in one repository (e.g. rate limits) don't crash or block 
-    the ingestion of the others.
+    This enables Airflow to parallelize extraction across multiple workers, distributing 
+    the API rate limit load.
 
     Args:
         repo_full_name: e.g. "apache/spark"

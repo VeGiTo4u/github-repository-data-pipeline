@@ -22,5 +22,5 @@ select
     current_timestamp() as _gold_update_ts
 from {{ ref('releases') }} rel
 left join {{ ref('dim_repositories_current') }} r
-  on rel._repo_full_name = r.repo_name
+  on rel.repository_id = r.repo_id
 where rel.is_quarantined = false

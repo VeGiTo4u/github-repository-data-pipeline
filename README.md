@@ -71,29 +71,31 @@ The pipeline implements a **Kimball-style star schema** in the Gold layer, fed b
 
 ### Gold Layer (Star Schema)
 
-```
-                            ┌─────────────────-┐
-                            │  dim_date        │
-                            │  (date_key PK)   │
-                            └────────┬─────────┘
+```text
+                            ┌─────────────────┐
+                            │  dim_date       │
+                            │  (date_key PK)  │
+                            └────────┬────────┘
                                      │
 ┌───────────────────┐    ┌───────────┴──────────┐    ┌──────────────────┐
 │  dim_repositories │    │    fact_issues       │    │    dim_users     │
-│  (repository_sk)  │◀───│  (issue_sk PK)       │───▶│  (user_sk PK)    │
-│  Type 2 SCD       │    │  Accumulating Snap.  │    │  Type 1          │
+│  (_current)       │◀───│  (issue_sk PK)       │───▶│  (user_sk PK)    │
+│  (repository_sk)  │    │  Accumulating Snap.  │    │  Type 1          │
 └───────────────────┘    └──────────────────────┘    └──────────────────┘
          ▲                                                    ▲
          │               ┌──────────────────────┐             │
-         └───────────────│  fact_pull_requests  │─────────────┘
-                         │  (pull_request_sk PK)│
-                         │  Accumulating Snap.  │
-                         └──────────────────────┘
-
-                         ┌──────────────────────┐
-                         │   fact_releases      │
+         ├───────────────│  fact_pull_requests  │─────────────┤
+         │               │  (pull_request_sk PK)│             │
+         │               │  Accumulating Snap.  │             │
+         │               └──────────────────────┘             │
+         │                                                    │
+         │               ┌──────────────────────┐             │
+         └───────────────│   fact_releases      │─────────────┘
                          │  (release_sk PK)     │
                          │  Transactional Fact  │
                          └──────────────────────┘
+
+(Note: History is tracked via a separate Type-2 `dim_repositories` SCD model)
 ```
 
 ### KPI Tables (Dashboard-Ready)

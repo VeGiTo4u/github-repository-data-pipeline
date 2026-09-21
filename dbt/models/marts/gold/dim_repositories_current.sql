@@ -8,7 +8,7 @@
 }}
 
 select
-    dbt_scd_id as repository_sk,
+    md5(cast(repository_id as string)) as repository_sk,
     repository_id as repo_id,
     full_name as repo_name,
     owner_login,
