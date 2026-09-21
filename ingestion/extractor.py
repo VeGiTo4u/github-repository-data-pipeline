@@ -26,7 +26,7 @@ def extract_repository_metadata(
     aws_access_key_id: str | None = None,
     aws_secret_access_key: str | None = None,
     aws_region: str = "us-east-1",
-) -> tuple[list[tuple[str | None, str, str]], list[int]]:
+) -> list[int]:
     """Extracts core resources for a single repository.
     We isolate this into a per-repo function so Airflow can map tasks dynamically. 
     This ensures failures in one repository (e.g. rate limits) don't crash or block 
@@ -44,10 +44,7 @@ def extract_repository_metadata(
         aws_region: AWS region.
 
     Returns:
-        A tuple of (results, pr_numbers).
-        results: List of (temp_file_path, s3_key, resource_type) tuples.
-                 If the resource was streamed directly to S3 (part files), temp_file_path is None.
-        pr_numbers: List of PR numbers extracted in this run.
+        List of PR numbers extracted in this run, for downstream GraphQL enrichment.
     """
     log = get_logger(__name__, run_id=extraction_run_id)
     throttle = get_throttle_threshold(repo_full_name)
@@ -55,7 +52,6 @@ def extract_repository_metadata(
     if not ingestion_date:
         ingestion_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     repo_slug = repo_full_name.replace("/", "_")
-    results = []
     pr_numbers = []
 
     mode = "incremental" if since else "full backfill"
@@ -115,13 +111,12 @@ def extract_repository_metadata(
             )
             if record_count == 0:
                 log.info(f"0 records extracted for {resource_type} ({repo_full_name})")
-            results.append((None, s3_key_prefix, resource_type))
                 
         except Exception as e:
             log.error(f"Failed extracting {resource_type} for {repo_full_name}: {e}")
             raise
 
-    return results, pr_numbers
+    return pr_numbers
 
 
 def extract_pr_details(

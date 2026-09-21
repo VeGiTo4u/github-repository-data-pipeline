@@ -65,7 +65,7 @@ with DAG(
             since = (since_dt - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # --- extract all resources for this repo ---
-        results, pr_numbers = extract_repository_metadata(
+        pr_numbers = extract_repository_metadata(
             repo_full_name=repo,
             extraction_run_id=run_id,
             github_token=github_token,
@@ -143,7 +143,7 @@ with DAG(
     # profiles.yml + env vars are already configured via docker-compose.
     dbt_build = BashOperator(
         task_id="dbt_build",
-        bash_command="cd /opt/airflow/dbt && dbt clean && dbt build --profiles-dir /opt/airflow/dbt",
+        bash_command="cd /opt/airflow/dbt && dbt build --profiles-dir /opt/airflow/dbt",
         execution_timeout=timedelta(hours=2),
     )
 
