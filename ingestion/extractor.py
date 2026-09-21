@@ -68,7 +68,7 @@ def extract_repository_metadata(
         if resource_type == "issues":
             params["state"] = "all"
             if since:
-                # ponytail: hard deletes on GitHub won't trigger `since`. 
+                # Hard deletes on GitHub won't trigger `since`. 
                 # Downstream SCD2 assumes they remain open. Rare enough to ignore.
                 params["since"] = since
         elif resource_type == "pull_requests":

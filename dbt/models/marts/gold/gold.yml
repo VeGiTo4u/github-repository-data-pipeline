@@ -4,9 +4,23 @@ models:
   - name: dim_repositories
     description: >
       Type-2 SCD Dimension table for repositories.
-      Why: Using Type-2 slowly changing dimensions allows us to track historical 
-      changes (e.g., when a repo's star count crossed a threshold) so fact tables 
-      can join against the exact state of the repository at the time the event occurred.
+      The repository dimension tracks repository metadata states observed by successive pipeline snapshots.
+      Why: Using Type-2 slowly changing dimensions allows us to track historical changes. 
+      Note: This does not represent a complete reconstruction of GitHub's historical metadata,
+      but rather the states as observed by the pipeline.
+    columns:
+      - name: repository_sk
+        description: "Surrogate key for the repository snapshot."
+        tests:
+          - unique
+          - not_null
+      - name: repo_id
+        description: "Natural key from GitHub."
+        tests:
+          - not_null
+
+  - name: dim_repositories_current
+    description: "The current state of each repository. Facts join to this table for stable identity."
     columns:
       - name: repository_sk
         description: "Surrogate key for the repository snapshot."
@@ -38,7 +52,7 @@ models:
       Why: Accumulating snapshots are ideal for workflows with a definite start and end 
       (like an issue being opened, triaged, and closed). It allows us to easily calculate 
       "time-to-close" in a single row without complex self-joins across transactional facts.
-      ponytail: Hard-deleted issues on GitHub are not captured by incremental delta and will appear permanently open.
+      Note: Hard-deleted issues on GitHub are not captured by incremental delta and will appear permanently open.
     columns:
       - name: issue_sk
         description: "Surrogate key for the issue."
@@ -46,12 +60,12 @@ models:
           - unique
           - not_null
       - name: repository_sk
-        description: "Foreign key to the repository dimension snapshot (point-in-time)."
+        description: "Foreign key to the current repository dimension."
         tests:
           - not_null
           - relationships:
               arguments:
-                to: ref('dim_repositories')
+                to: ref('dim_repositories_current')
                 field: repository_sk
       - name: author_user_sk
         description: "Foreign key to the user dimension."
@@ -63,7 +77,7 @@ models:
                 field: user_sk
 
   - name: fact_pull_requests
-    description: "Accumulating snapshot fact table for GitHub pull requests. ponytail: Hard-deleted PRs on GitHub are not captured by incremental delta and will appear permanently open."
+    description: "Accumulating snapshot fact table for GitHub pull requests. Note: Hard-deleted PRs on GitHub are not captured by incremental delta and will appear permanently open."
     columns:
       - name: pull_request_sk
         description: "Surrogate key for the pull request."
@@ -71,12 +85,12 @@ models:
           - unique
           - not_null
       - name: repository_sk
-        description: "Foreign key to the repository dimension snapshot (point-in-time)."
+        description: "Foreign key to the current repository dimension."
         tests:
           - not_null
           - relationships:
               arguments:
-                to: ref('dim_repositories')
+                to: ref('dim_repositories_current')
                 field: repository_sk
       - name: author_user_sk
         description: "Foreign key to the user dimension."
@@ -95,6 +109,14 @@ models:
         tests:
           - unique
           - not_null
+      - name: repository_sk
+        description: "Foreign key to the current repository dimension."
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repositories_current')
+                field: repository_sk
       - name: author_user_sk
         description: "Foreign key to the user dimension."
         tests:

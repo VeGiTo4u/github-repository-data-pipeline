@@ -97,7 +97,7 @@ with DAG(
 
 
     # Dynamic Task Mapping — one task instance per repo in repo_list
-    # ponytail: falls back to all repos in REPO_REGISTRY when Variable is unset
+    # Falls back to all repos in REPO_REGISTRY when Variable is unset
     from ingestion.repo_config import REPO_REGISTRY
     _repo_list = Variable.get(
         "repo_list", deserialize_json=True, default_var=list(REPO_REGISTRY.keys())

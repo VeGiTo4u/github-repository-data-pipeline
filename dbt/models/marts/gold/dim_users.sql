@@ -1,6 +1,6 @@
 -- dim_users.sql
 -- Type 1 Overwrite. Deduplicated from issues, PRs, and releases.
--- ponytail: skipped assignee/reviewer/user_type extraction since not parsed in staging. add when staging parser updated.
+-- Skipped assignee/reviewer/user_type extraction since not parsed in staging. Add when staging parser updated.
 
 {{
     config(

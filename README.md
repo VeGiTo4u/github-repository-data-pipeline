@@ -25,7 +25,7 @@
 
 ## Overview
 
-This project implements a production-grade data pipeline that extracts repository metadata, issues, pull requests, releases, and language statistics from the GitHub API (REST + GraphQL), lands them in S3, transforms them through a Medallion architecture (Bronze → Silver → Gold), and serves a Streamlit analytics dashboard via DuckDB.
+This project implements an end-to-end production-oriented Data Engineering pipeline for extracting, transforming, and analyzing data from GitHub repositories. It is designed to be highly scalable, idempotent, and resilient against API rate limits and network failures from the GitHub API (REST + GraphQL), lands them in S3, transforms them through a Medallion architecture (Bronze → Silver → Gold), and serves a Streamlit analytics dashboard via DuckDB.
 
 **Repositories Tracked:**
 
@@ -127,7 +127,7 @@ github-repository-data-pipeline/
 ├── ingestion/                        # Data extraction & loading
 │   ├── extractor.py                  # Per-repo extraction (REST + GraphQL)
 │   ├── github_client.py              # HTTP client with rate-limit backpressure
-│   ├── s3_writer.py                  # S3 upload (single file + chunked streaming)
+│   ├── s3_writer.py                  # Chunked streaming NDJSON uploads to S3
 │   ├── normalizer.py                 # Lineage envelope wrapper for audit trail
 │   ├── repo_config.py                # Tier-based throttle + repo registry
 │   ├── logger.py                     # Structured JSON-lines logger
@@ -200,21 +200,21 @@ Create a `.env` file at the project root:
 
 ```env
 # GitHub
-GITHUB_TOKEN=github_pat_XXXXXXXXXXXXXXXXXXXX
-AIRFLOW_VAR_GITHUB_TOKEN=github_pat_XXXXXXXXXXXXXXXXXXXX
+GITHUB_TOKEN=<GITHUB_TOKEN>
+AIRFLOW_VAR_GITHUB_TOKEN=<GITHUB_TOKEN>
 
 # AWS
-AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXX
-AWS_SECRET_ACCESS_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-AWS_REGION=us-east-1
-S3_BUCKET_NAME=your-bucket-name
+AWS_ACCESS_KEY_ID=<AWS_ACCESS_KEY_ID>
+AWS_SECRET_ACCESS_KEY=<AWS_SECRET_ACCESS_KEY>
+AWS_REGION=<AWS_REGION>
+S3_BUCKET_NAME=<S3_BUCKET_NAME>
 
 # Databricks
-DATABRICKS_HOST=dbc-XXXXXXXX-XXXX.cloud.databricks.com
-DATABRICKS_TOKEN=dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+DATABRICKS_HOST=<DATABRICKS_HOST>
+DATABRICKS_TOKEN=<DATABRICKS_TOKEN>
 DATABRICKS_CATALOG=github_analytics
 DATABRICKS_SCHEMA=bronze
-DATABRICKS_SQL_WAREHOUSE_HTTP_PATH=/sql/1.0/warehouses/XXXXXXXXXXXXXXXX
+DATABRICKS_SQL_WAREHOUSE_HTTP_PATH=<DATABRICKS_SQL_WAREHOUSE_HTTP_PATH>
 
 # Airflow Connections (auto-created on startup)
 AIRFLOW_CONN_AWS_DEFAULT=aws://AKIAXXXXXXXXXXXX:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX@

@@ -1,1356 +1,1704 @@
-# GitHub Repository Analytics Pipeline
-# Remaining Issues + Exact Fixes
-# Final Engineering Remediation Checklist
+# Final In-Depth Audit — github-repository-data-pipeline(3)
 
-Project Status:
-- Current Portfolio Rating: ~8.5/10
-- Target After Remaining Fixes: ~9/10
-- Suitable for a 4th-year Data Engineering portfolio: YES
-- Major architecture redesign required: NO
-- Focus now: correctness, reliability, semantics, testing, and cleanup
+I reviewed the latest uploaded repository again rather than relying on the
+previous audit.
 
-============================================================
-PRIORITY SUMMARY
-============================================================
+Scope reviewed:
 
-P0/P1 — MUST FIX
+- Airflow DAG
+- Airflow Docker configuration
+- Airflow requirements
+- Python ingestion package
+- GitHub REST/GraphQL client
+- S3 writer
+- Normalizer/lineage
+- Repository configuration
+- Databricks Bronze loader/notebook
+- Databricks export notebook
+- All dbt staging models
+- All dbt intermediate models
+- All dbt Silver models
+- All dbt Gold dimensions/facts/KPIs
+- dbt snapshots
+- dbt macros
+- dbt tests
+- Streamlit application
+- Streamlit SQL queries
+- README
+- Architecture documentation
+- Data-model documentation
+- CLAUDE/project-context documentation
+- AUDIT.md
+- Docker/requirements/configuration files
 
-1. Watermark uses the wrong timestamp
-2. Dynamic Task Mapping fault-isolation claim is incorrect
-3. fact_releases is missing repository foreign key
-4. SCD2 documentation overstates historical accuracy
+I also ran:
 
-P2 — SHOULD FIX
+- Python compilation across the Python source files: PASS
+- YAML parsing across YAML files: PASS
+- Repository-wide searches for stale architecture markers and unresolved
+  comments
+- Static inspection of the updated watermark, S3, Airflow, dbt and data-model
+  paths
 
-5. Remove stale tempfile documentation/comments
-6. Remove obsolete extractor `results`
-7. Remove `dbt clean` from scheduled production execution
-8. Remove/parameterize development credentials
-9. Clean duplicate/redundant dependency installation
-10. Clarify S3 replacement semantics
+There are 74 non-Git project files in this version.
 
-P1 — ENGINEERING MATURITY
+# Current Verdict
 
-11. Add Python unit tests
-12. Add GitHub Actions CI
+## Portfolio rating: 8.5/10
 
+For a 4th-year Data Engineering student:
 
-============================================================
-ISSUE 1
-WATERMARK IS ADVANCED USING THE WRONG TIMESTAMP
-============================================================
+## Strong project.
 
-Priority:
-P0/P1 — Data Correctness
+The architecture is now considerably more coherent than the first version.
 
-Current improvement:
+Several of the previous issues are genuinely fixed:
 
-The watermark is now advanced AFTER Bronze processing.
+- Airflow requirements path
+- Watermark capture timing
+- Watermark advancement after Bronze
+- S3 deletion failure handling
+- GitHub username mapping
+- Median KPI naming
+- Artificial 1900 SCD date
+- dbt clean removal
+- Dynamic-mapping documentation has improved
+- Extractor no longer uses the old temporary-file implementation
 
-Current flow:
+However, I found **two important data-model/correctness issues that I would fix
+before final submission**, plus several smaller engineering/documentation issues.
 
-extract
-  ↓
-S3
-  ↓
-Bronze
-  ↓
-advance_watermarks
-  ↓
-dbt
+The most important one is actually a new consequence of removing the
+1900-date workaround.
 
-This is correct.
-
-However, `_advance_watermarks()` currently generates a NEW timestamp:
-
-current_run_ts = datetime.now(timezone.utc)
-
-This timestamp represents the time when the watermark task executes.
-
-It does NOT necessarily represent the source extraction boundary.
-
-Example:
-
-10:00 — extraction begins
-10:30 — extraction finishes
-11:00 — Bronze finishes
-11:05 — watermark task executes
-
-Current watermark:
-
-11:05
-
-But the extraction did not necessarily include source changes occurring after:
-
-10:30
-
-The next extraction uses:
-
-watermark - 10 minutes
-
-Therefore:
-
-11:05 - 10 minutes
-=
-10:55
-
-Data updated between:
-
-10:30 and 10:55
-
-could potentially be missed.
-
-The overlap window does not completely solve this because the watermark itself
-was moved beyond the actual extraction boundary.
-
-
-FIX
 ---
 
-Capture an extraction boundary BEFORE extraction begins.
+# 1. HIGH PRIORITY — Repository SCD2 Can Cause `repository_sk` NULLs in Facts
 
-Example:
+## Severity
 
-extraction_boundary = current UTC timestamp
+P1 — Data-model correctness / potentially failing dbt tests
 
-Then use:
+This is now the most important issue I found.
 
-previous_watermark - safety_window
+You correctly removed the artificial:
 
-as the extraction lower boundary.
+    1900-01-01
 
-After:
+from `dim_repositories`.
 
-1. Extraction succeeds
-2. Raw S3 write succeeds
-3. Bronze succeeds
+That was the correct direction.
 
-commit:
+However, the current fact models perform a point-in-time join:
 
-extraction_boundary
+    fact created_at
+        >= repository.valid_from
+        AND
+    fact created_at
+        < repository.valid_to
 
-NOT:
+For example:
 
-datetime.now() at the watermark task.
-
-
-Recommended flow:
-
-previous_successful_watermark
-        ↓
-subtract safety window
-        ↓
-capture extraction_boundary
-        ↓
-extract GitHub
-        ↓
-write S3
-        ↓
-load Bronze
-        ↓
-commit extraction_boundary
-        ↓
-dbt
-
-
-Example:
-
-10:00
-extraction_boundary = 10:00
-
-Extraction finishes:
-10:30
-
-Bronze finishes:
-11:00
-
-Watermark committed:
-10:00
-
-
-Next run:
-
-10:00 - 10 minutes
-=
-09:50
-
-
-This provides a real overlap window around the actual extraction boundary.
-
-
-RECOMMENDED IMPLEMENTATION
---------------------------
-
-At the beginning of the repository extraction task:
-
-extraction_boundary = datetime.now(timezone.utc)
-
-
-Pass the boundary through the task result or run metadata.
-
-After Bronze succeeds:
-
-advance_watermark(repo, extraction_boundary)
-
-
-Do NOT generate a fresh timestamp inside `_advance_watermarks()`.
-
-
-BEST LONG-TERM DESIGN
----------------------
-
-Track:
-
-run_id
-extraction_started_at
-extraction_boundary
-bronze_completed_at
-watermark_committed_at
-
-
-This gives the pipeline explicit operational lineage.
-
-
-============================================================
-ISSUE 2
-DYNAMIC TASK MAPPING DOES NOT PROVIDE THE FAULT ISOLATION
-CLAIMED BY THE DOCUMENTATION
-============================================================
-
-Priority:
-P1 — Architecture / Documentation Correctness
-
-Current architecture:
-
-extract_repo[repo1] ─┐
-extract_repo[repo2] ─┤
-extract_repo[repo3] ─┤
-extract_repo[repo4] ─┤
-                     ↓
-                 run_bronze
-
-
-Suppose:
-
-repo1 = SUCCESS
-repo2 = SUCCESS
-repo3 = SUCCESS
-repo4 = FAILED
-
-
-The mapped extraction tasks can execute independently.
-
-However, the downstream Bronze task depends on the mapped extraction stage.
-
-Therefore Bronze will not execute normally if the mapped extraction stage has a
-failed task instance.
-
-Consequently:
-
-repo4 fails
-    ↓
-Bronze does not execute
-    ↓
-watermarks do not advance
-    ↓
-dbt does not execute
-    ↓
-entire pipeline run fails
-
-
-The README currently implies:
-
-"A failure in microsoft/vscode doesn't block duckdb/duckdb."
-
-That is misleading.
-
-The mapped extraction tasks are independently scheduled, but the downstream
-pipeline is still effectively all-or-nothing.
-
-
-RECOMMENDED FIX
----------------
-
-For this project, DO NOT implement partial-success processing unless there
-is a strong reason to do so.
-
-Instead, change the documentation to explicitly state:
-
-"Dynamic Task Mapping allows repositories to execute as independent Airflow
-task instances. Extraction failures are isolated at the task-instance level,
-but downstream Bronze processing intentionally requires the complete mapped
-extraction stage to succeed."
-
-
-This gives you a clear all-or-nothing daily batch design.
-
-
-ALTERNATIVE — PARTIAL SUCCESS
------------------------------
-
-If true repository-level fault isolation is desired:
-
-extract repositories
-        ↓
-collect successful repositories
-        ↓
-Bronze only successful repositories
-        ↓
-advance watermark only for successful repositories
-        ↓
-dbt
-
-
-DO NOT simply change Bronze to:
-
-trigger_rule="all_done"
-
-That would be dangerous.
-
-A failed repository must NEVER have its watermark advanced.
-
-
-RECOMMENDATION
---------------
-
-Use the simpler all-or-nothing design.
-
-It is easier to reason about and perfectly acceptable for this portfolio.
-
-
-============================================================
-ISSUE 3
-FACT_RELEASES IS MISSING REPOSITORY FOREIGN KEY
-============================================================
-
-Priority:
-P1 — Data Modeling
-
-Current fact:
-
-fact_releases
-
-contains information such as:
-
-release_sk
-author_user_sk
-release_id
-release_name
-published_at
-etc.
-
-But it does not contain:
-
-repo_id
-repository_sk
-
-
-The model itself acknowledges:
-
-"repo_id is not present in releases intermediate model."
-
-
-This weakens the star schema.
-
-The release API endpoint is repository-specific:
-
-/repos/{owner}/{repo}/releases
-
-
-The raw extraction already knows the repository:
-
-repo_full_name
-
-
-Therefore repository identity is being lost during transformation.
-
-
-WHY THIS MATTERS
-----------------
-
-Without repository context, questions such as:
-
-- Which repository releases most frequently?
-- Which repository has the most releases?
-- Release frequency by repository?
-- Releases by repository over time?
-
-become unnecessarily difficult.
-
-
-FIX
----
-
-Carry repository identity through the entire transformation pipeline:
-
-GitHub API
-    ↓
-raw
-    ↓
-Bronze
-    ↓
-staging
-    ↓
-intermediate
-    ↓
-Silver
-    ↓
-fact_releases
-
-
-Recommended columns:
-
-repo_id
-or
-repository_sk
-
-
-Preferably resolve the repository through:
-
-dim_repositories
-
-
-Final fact should conceptually contain:
-
-fact_releases
-    release_sk
-    repository_sk
-    author_user_sk
-    release_id
-    release_name
-    release_created_at
-    release_published_at
-    ...
-
-
-Add dbt relationship testing:
-
-release.repository_sk
-    → dim_repositories.repository_sk
-
-
-Also add uniqueness tests where appropriate.
-
-
-============================================================
-ISSUE 4
-SCD2 DOCUMENTATION OVERSTATES HISTORICAL ACCURACY
-============================================================
-
-Priority:
-P1 — Semantic Correctness
-
-GOOD NEWS:
-
-The artificial:
-
-1900-01-01
-
-valid_from value has been removed.
-
-That issue is FIXED.
-
-
-However, the documentation currently implies that the SCD2 model provides the
-repository's exact metadata state at the time of an issue/PR event.
-
-That is not strictly guaranteed.
-
-Example:
-
-Repository metadata actually changed:
-January 2025
-
-Pipeline observed the change:
-January 2026
-
-Issue created:
-June 2025
-
-
-The pipeline does not possess the actual June 2025 repository metadata unless
-GitHub provided that historical state.
-
-Therefore the model represents:
-
-"repository metadata observed by the pipeline"
-
-rather than:
-
-"perfect historical business-time repository state."
-
-
-FIX
----
-
-Update documentation language.
-
-Do NOT say:
-
-"exact repository metadata state at the time of the event"
-
-
-Use:
-
-"repository metadata state represented by the latest available pipeline
-observation covering the event timestamp."
-
-
-Or explicitly define the dimension as:
-
-Observation-Time SCD Type 2
-
-
-Recommended explanation:
-
-"The repository dimension tracks observed metadata states over successive
-pipeline snapshots. Point-in-time joins associate facts with the latest
-available observed repository state covering the event timestamp. This should
-not be interpreted as a complete reconstruction of GitHub's historical
-metadata."
-
-
-This is technically honest and defensible in an interview.
-
-
-============================================================
-ISSUE 5
-STALE TEMPFILE DOCUMENTATION
-============================================================
-
-Priority:
-P2 — Documentation / Code Quality
-
-The implementation has moved to direct streaming:
-
-GitHub generator
-    ↓
-lineage envelope
-    ↓
-S3 streaming
-
-
-However, parts of the documentation still refer to:
-
-- temporary files
-- tempfile paths
-- uploading temp files
-- temp-file encoding
-- watermark before temp-file upload
-
-
-This is leftover from the previous implementation.
-
-
-FIX
----
-
-Search the complete repository for:
-
-tempfile
-temporary file
-temp files
-temp file
-temp_file_path
-before uploading temp files
-
-
-Remove obsolete references.
-
-
-Specifically review:
-
-README.md
-docs/Architecture.md
-docs/CLAUDE.md
-extractor.py
-DAG comments
-
-
-The documentation must describe the current implementation, not the previous
-architecture.
-
-
-============================================================
-ISSUE 6
-REMOVE OBSOLETE `results` FROM EXTRACTOR
-============================================================
-
-Priority:
-P2 — Code Quality
-
-The extractor still has an old return structure similar to:
-
-results, pr_numbers
-
+    fact_pull_requests.sql
 
 and:
 
-results = []
+    fact_issues.sql
 
+use:
 
-with entries such as:
+    left join dim_repositories r
+      on p.repository_id = r.repo_id
+      and p.created_at >= r.valid_from
+      and p.created_at < coalesce(r.valid_to, '9999-12-31')
 
-(None, s3_key_prefix, resource_type)
+The problem is that the repository snapshot's first:
 
+    dbt_valid_from
 
-The old docstring also describes:
+is approximately:
 
-temp_file_path
+    when the pipeline first observed the repository
 
+It is NOT:
 
-But temporary files no longer exist.
-
-The DAG does not meaningfully use `results`.
-
-
-FIX
----
-
-Simplify the extractor API.
-
-Current conceptual design:
-
-results, pr_numbers = extract_repository_metadata(...)
-
-
-Recommended:
-
-pr_numbers = extract_repository_metadata(...)
-
-
-The extractor should return only information actually required by the DAG.
-
-
-Update the docstring accordingly.
+    when the repository was created
 
 Example:
 
-Returns:
-    List of PR numbers requiring GraphQL enrichment.
+    Repository created:          2015
+    First pipeline observation: 2026
+    Issue created:               2020
 
+The point-in-time join asks:
 
-This removes dead architectural baggage from the old tempfile implementation.
+    2020 >= 2026 ?
+
+False.
+
+Therefore:
+
+    repository_sk = NULL
+
+for that historical issue.
+
+This is especially important because your Gold schema currently has:
+
+    repository_sk
+        not_null
+        relationships -> dim_repositories.repository_sk
+
+So you have a potential contradiction:
+
+    historical GitHub facts
+            ↓
+    repository created_at < first SCD observation
+            ↓
+    no matching SCD row
+            ↓
+    repository_sk = NULL
+            ↓
+    dbt not_null test fails
+
+This is not merely theoretical. Your tracked repositories contain historical
+issues and PRs that predate the first pipeline observation.
+
+## Why the old 1900 workaround existed
+
+The old:
+
+    1900-01-01
+
+was technically semantically questionable because it pretended the observed
+repository state existed historically.
+
+But it also guaranteed a dimension match.
+
+Removing it fixed one semantic problem but exposed the dimensional-FK problem.
+
+## Recommended solution
+
+Do NOT put 1900 back.
+
+Instead choose one of these designs.
+
+### Option A — Recommended for this project
+
+Separate:
+
+    repository identity
+
+from:
+
+    repository historical state
+
+Use `repo_id` as the stable business relationship and associate facts with the
+current repository dimension row.
+
+Keep the SCD2 history separately for historical repository metadata analysis.
+
+Conceptually:
+
+    fact_issue
+        repo_id
+           ↓
+    current repository dimension
+
+while:
+
+    dim_repository_history
+        ↓
+    historical metadata analysis
+
+This is the simplest and most defensible student architecture.
+
+### Option B — Add a current dimension model
+
+Create:
+
+    dim_repositories_current
+
+containing exactly one row per:
+
+    repo_id
+
+Then facts use:
+
+    repository_sk
+
+from the current dimension.
+
+The existing:
+
+    dim_repositories
+
+can remain the SCD2 history table.
+
+This is architecturally clean but adds another model.
+
+### Option C — Fallback join
+
+Use:
+
+    point-in-time repository row
+        OR
+    current repository row if no historical observation exists
+
+This is simpler but requires very explicit documentation because it creates
+mixed temporal semantics.
+
+## What I recommend
+
+For this project:
+
+    dim_repositories
+        = SCD2 history
+
+    dim_repositories_current
+        = one current row per repository
+
+    fact_issues.repository_sk
+        -> dim_repositories_current
+
+    fact_pull_requests.repository_sk
+        -> dim_repositories_current
+
+This avoids inventing historical data while keeping the SCD2 demonstration.
+
+If you don't want another model, use `repo_id` as the primary repository
+relationship in facts and retain the SCD2 table for repository history.
+
+## Status
+
+NOT FIXED.
+
+This should be addressed before final submission.
 
 
 ============================================================
-ISSUE 7
-REMOVE `dbt clean` FROM EVERY SCHEDULED RUN
+# 2. HIGH PRIORITY — fact_releases STILL HAS NO repository_sk
 ============================================================
 
-Priority:
-P2 — Operational Hygiene
+## Severity
 
-Current command is approximately:
+P1 — Data-model completeness
 
-dbt clean && dbt build
+This issue remains unchanged.
 
+`fact_releases.sql` currently contains:
 
-`dbt clean` is normally a development/maintenance command.
+    release_sk
+    author_user_sk
+    release_id
+    author_user_id
+    published_date_key
+    tag_name
+    ...
 
-Running it on every scheduled production execution:
+but does not contain:
 
-- removes generated artifacts
-- removes installed packages depending on configuration
-- increases runtime
-- introduces unnecessary failure points
-- provides little value during normal scheduled execution
+    repository_sk
+    repo_id
 
+The comment still says:
 
-FIX
----
+    skip repo_id, it is not present in releases intermediate model.
 
-Scheduled Airflow task should run:
+This is particularly unnecessary because:
 
-dbt build --profiles-dir /opt/airflow/dbt
+`stg_github_releases.sql` already contains:
 
+    _repo_full_name
 
-Use manually when troubleshooting:
+and therefore the repository identity is available.
 
-dbt clean
+The release API itself is repository-specific:
 
+    /repos/{owner}/{repo}/releases
 
-This makes scheduled execution simpler and more predictable.
+## Fix
 
+Carry:
 
-============================================================
-ISSUE 8
-AIRFLOW DEPENDENCIES ARE DECLARED TWICE
-============================================================
+    _repo_full_name
 
-Priority:
-P2 — Maintainability
+through:
 
-The Airflow requirements file contains packages such as:
+    staging
+        ↓
+    intermediate
+        ↓
+    Silver
+        ↓
+    Gold
 
-apache-airflow-providers-databricks
-dbt-databricks
-databricks-sdk
+Then resolve it against the repository dimension.
 
+Recommended final structure:
 
-The Dockerfile also installs these packages explicitly.
+    fact_releases
 
-
-This creates duplicate dependency declarations.
-
-
-FIX
----
-
-Keep dependency declarations in:
-
-airflow/requirements.txt
-
-
-Dockerfile should simply:
-
-COPY airflow/requirements.txt /requirements.txt
-
-RUN pip install --no-cache-dir -r /requirements.txt
-
-
-Avoid maintaining the same dependency list in two places.
-
-
-NOTE:
-
-The Airflow base image already provides Airflow itself.
-
-Avoid unnecessarily reinstalling:
-
-apache-airflow==2.10.5
-
-unless there is a specific reason to pin/reinstall it.
-
-
-============================================================
-ISSUE 9
-DEVELOPMENT CREDENTIALS SHOULD BE EXTERNALIZED
-============================================================
-
-Priority:
-P2 — Security
-
-Current Docker configuration still contains development defaults such as:
-
-AIRFLOW_ADMIN_USERNAME=admin
-AIRFLOW_ADMIN_PASSWORD=admin
-
-and a hardcoded Airflow secret key.
-
-
-These are acceptable for a local demo but should not look like production
-configuration.
-
-
-FIX
----
-
-Use environment variables:
-
-AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
-AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
-AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_SECRET_KEY}
-
-
-Provide:
-
-.env.example
-
-
-Example:
-
-AIRFLOW_ADMIN_USERNAME=<your-admin-username>
-AIRFLOW_ADMIN_PASSWORD=<your-admin-password>
-AIRFLOW_SECRET_KEY=<generate-a-random-secret>
-
-
-Do not commit `.env`.
-
-
-Document clearly:
-
-"These values are development-only and should be replaced in real
-deployments."
-
-
-============================================================
-ISSUE 10
-S3 REPLACEMENT DESIGN HAS A FAILURE WINDOW
-============================================================
-
-Priority:
-P2 — Reliability Hardening
-
-Current raw ingestion approach is approximately:
-
-list existing objects
-    ↓
-delete objects
-    ↓
-upload new objects
-
-
-This is much better than silently ignoring deletion failures because deletion
-errors now fail the task.
-
-
-However, consider:
-
-delete succeeds
-    ↓
-upload begins
-    ↓
-upload fails halfway
-
-
-The previous valid raw dataset has already been deleted.
-
-
-This means a failed upload can leave the prefix incomplete.
-
-
-CURRENT STATUS:
-
-Acceptable for this portfolio.
-
-Not an immediate blocker.
-
-
-BEST LONG-TERM DESIGN
----------------------
-
-Use immutable run-specific paths:
-
-raw/
-    issues/
-        ingestion_date=2026-09-21/
-            run_id=<run_id>/
-                part_001.json
-                part_002.json
-
-
-Write the complete new run first.
-
-Then mark the run as successful.
-
-Bronze reads only successful runs.
-
-
-This provides:
-
-- replayability
-- atomic publishing semantics
-- historical raw data
-- easier debugging
-- safer retries
-
-
-Do NOT implement this merely to increase technology complexity.
-
-It is a future hardening improvement.
-
-
-============================================================
-ISSUE 11
-TESTING IS STILL MISSING
-============================================================
-
-Priority:
-P1 — Engineering Maturity
-
-The project still needs Python unit tests.
-
-
-Minimum recommended structure:
-
-tests/
-    test_github_client.py
-    test_extractor.py
-    test_s3_writer.py
-    test_normalizer.py
-    test_repo_config.py
-
-
-Recommended test cases:
-
-
-GitHub Client:
-
-[ ] pagination
-[ ] empty response
-[ ] 429 rate limit
-[ ] 403 rate limit
-[ ] 500 server error
-[ ] network failure
-[ ] retry exhaustion
-
-
-GraphQL:
-
-[ ] successful batch
-[ ] partial batch failure
-[ ] fallback behavior
-[ ] missing node
-
-
-Extractor:
-
-[ ] full extraction
-[ ] incremental extraction
-[ ] empty repository
-[ ] PR detail extraction
-[ ] duplicate handling
-
-
-S3 Writer:
-
-[ ] chunking
-[ ] empty input
-[ ] successful upload
-[ ] retry
-[ ] upload failure
-[ ] deletion failure
-
-
-Watermark:
-
-[ ] first run
-[ ] successful run
-[ ] failed extraction
-[ ] failed Bronze
-[ ] replay
-[ ] safety overlap
-
-
-Configuration:
-
-[ ] valid repository
-[ ] invalid repository
-[ ] duplicate repository
-[ ] malformed configuration
-
-
-TARGET:
-
-Approximately 15–25 high-value tests.
-
-Do NOT spend time trying to reach 100% code coverage.
-
-Test the failure modes that matter.
-
-
-============================================================
-ISSUE 12
-CI/CD IS STILL MISSING
-============================================================
-
-Priority:
-P1 — Engineering Maturity
+        release_sk
+        repository_sk
+        author_user_sk
+        release_id
+        author_user_id
+        published_date_key
+        tag_name
+        is_prerelease
+        ...
 
 Add:
 
-.github/
-    workflows/
-        ci.yml
+    relationships:
+      to: ref('dim_repositories_current')
+      field: repository_sk
+
+or the appropriate repository dimension depending on the solution selected
+for Issue #1.
+
+## Status
+
+NOT FIXED.
 
 
-Minimum CI:
+============================================================
+# 3. IMPORTANT — SCD2 Documentation Is Still Too Strong
+============================================================
 
-checkout
-    ↓
-Python setup
-    ↓
-install dependencies
-    ↓
-ruff
-    ↓
-pytest
-    ↓
-compileall
-    ↓
-YAML validation
+## Severity
 
+P1 — Semantic correctness
+
+Your `gold.yml` currently describes the SCD2 dimension as allowing facts to:
+
+    join against the exact state of the repository at the time the event
+    occurred.
+
+That is not strictly true.
+
+Your SCD2 tracks:
+
+    observed repository state
+
+not:
+
+    complete historical GitHub state.
+
+Example:
+
+    GitHub actual state:
+        2020 → 500 stars
+        2021 → 800 stars
+
+    Pipeline starts:
+        2026
+
+The pipeline cannot reconstruct the 2020 or 2021 state unless the source
+provides historical snapshots.
+
+Therefore:
+
+    dbt_valid_from
+
+means:
+
+    "when this state was observed by the pipeline"
+
+not:
+
+    "when this state actually became true on GitHub"
+
+## Fix
+
+Change the documentation to something like:
+
+    "The repository dimension tracks repository metadata states observed by
+    successive pipeline snapshots. Point-in-time joins use the latest
+    available observed state covering the event timestamp. This does not
+    represent a complete reconstruction of GitHub's historical metadata."
+
+Do not claim:
+
+    exact repository state at event time
+
+unless the source actually provides that history.
+
+## Status
+
+Documentation still needs correction.
+
+
+============================================================
+# 4. GOOD — WATERMARK TIMING IS NOW CORRECT
+============================================================
+
+This was one of the major previous issues.
+
+You now capture:
+
+    extraction_boundary = datetime.now(timezone.utc)
+
+BEFORE extraction begins.
+
+Then the extraction task returns:
+
+    {
+        "repo": repo,
+        "extraction_boundary": extraction_boundary
+    }
+
+After Bronze:
+
+    advance_watermarks
+
+reads the XCom values and commits:
+
+    extraction_boundary
+
+This is the correct direction.
+
+The previous bug:
+
+    watermark = datetime.now()
+    at the later watermark task
+
+has been fixed.
+
+## Current flow
+
+    previous watermark
+            ↓
+    10-minute overlap
+            ↓
+    capture extraction boundary
+            ↓
+    GitHub extraction
+            ↓
+    S3
+            ↓
+    Bronze
+            ↓
+    commit extraction boundary
+            ↓
+    dbt
+            ↓
+    export
+
+This is much better.
+
+## One nuance
+
+The extraction boundary is not passed into GitHub API calls as an upper
+`updated_at` limit.
+
+That is not necessarily a bug.
+
+Because the watermark is set to the earlier boundary, any records returned
+after the boundary will be fetched again during the next run.
+
+That creates some duplicate/reprocessing work, but it does not create a gap.
+
+Given your downstream deduplication, this is acceptable.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 5. GOOD — WATERMARK NOW ADVANCES AFTER BRONZE
+============================================================
+
+The current DAG is:
+
+    extract_repos
+        ↓
+    run_bronze
+        ↓
+    advance_watermarks
+        ↓
+    dbt_build
+        ↓
+    export_kpis
+
+This fixes the original dangerous situation:
+
+    extraction succeeds
+        ↓
+    watermark advances
+        ↓
+    Bronze fails
+
+The current behavior is:
+
+    extraction
+        ↓
+    Bronze
+        ↓
+    watermark
+
+This is correct.
+
+If dbt later fails, Bronze already contains the data and the next execution
+can rebuild dbt without requiring the source to be re-extracted.
+
+That is a reasonable design.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 6. DYNAMIC TASK MAPPING — DOCUMENTATION IS NOW CORRECT
+============================================================
+
+This was improved.
+
+README now correctly explains that:
+
+- repository extraction runs as independent mapped tasks
+- task-level retry isolation exists
+- downstream Bronze requires the complete mapped extraction stage
+- the daily pipeline is intentionally all-or-nothing
+
+That is technically accurate.
+
+Current semantics:
+
+    repo A ─┐
+    repo B ─┤
+    repo C ─┤
+    repo D ─┤
+            ↓
+        Bronze
+            ↓
+        watermark
+            ↓
+          dbt
+
+If repo C fails:
+
+    repo C = failed
+    Bronze = blocked
+    watermark = not advanced
+    dbt = blocked
+
+This is acceptable.
+
+## One remaining stale comment
+
+`extractor.py` still says:
+
+    "failures in one repository ... don't crash or block the ingestion
+    of the others."
+
+That is misleading.
+
+The mapped extraction tasks can execute/retry independently, but the overall
+pipeline is intentionally all-or-nothing before Bronze.
+
+Change the wording to:
+
+    "Each repository is isolated as an independent Airflow task instance,
+    allowing independent retries and parallel execution. The downstream
+    Bronze stage intentionally waits for the complete mapped extraction
+    stage to succeed."
+
+## Status
+
+Architecture/documentation: FIXED
+
+One stale extractor comment remains.
+
+
+============================================================
+# 7. S3 IDEMPOTENCY — NOW ACCEPTABLE
+============================================================
+
+The previous contradiction has been fixed.
+
+The writer now:
+
+    deletes existing parts
+        ↓
+    fails the task if deletion fails
+        ↓
+    writes new parts
+
+This is much better than:
+
+    deletion fails
+        ↓
+    log warning
+        ↓
+    continue
+
+The IAM/documentation now also acknowledges:
+
+    s3:DeleteObject
+
+This is internally consistent.
+
+## Remaining architectural limitation
+
+The current approach is:
+
+    delete old data
+        ↓
+    upload new data
+
+If deletion succeeds and upload fails halfway, the old data has already been
+removed.
+
+For a production-grade lake architecture, immutable run-based raw storage is
+safer:
+
+    raw/.../run_id=<run_id>/
+
+But this is no longer a blocker for this portfolio project.
+
+## Status
+
+FIXED for current project scope.
+
+Future hardening:
+
+    immutable raw runs + publish/commit semantics.
+
+
+============================================================
+# 8. AIRFLOW DOCKER REQUIREMENTS — FIXED
+============================================================
+
+You now have:
+
+    airflow/requirements.txt
+
+and:
+
+    COPY airflow/requirements.txt /requirements.txt
+
+This resolves the previous broken:
+
+    COPY requirements.txt
+
+problem.
+
+The Docker build context can now access the required file.
+
+## Minor cleanup
+
+The dependencies are now correctly centralized in:
+
+    airflow/requirements.txt
+
+The Dockerfile only needs to install that file.
+
+Do not duplicate packages in both the requirements file and Dockerfile.
+
+Current Dockerfile appears clean enough.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 9. AIRFLOW DEPENDENCIES — MINOR CLEANUP
+============================================================
+
+Current:
+
+    airflow/requirements.txt
+
+contains:
+
+    apache-airflow-providers-databricks
+    dbt-databricks
+    databricks-sdk
+
+This is correct.
+
+The base Airflow image already contains Airflow itself.
+
+Therefore you should not unnecessarily reinstall:
+
+    apache-airflow==2.10.5
+
+in the Dockerfile.
+
+The current version no longer appears to do that, which is good.
+
+## Status
+
+Essentially fixed.
+
+
+============================================================
+# 10. `dbt clean` REMOVAL — FIXED
+============================================================
+
+The DAG now runs:
+
+    dbt build --profiles-dir /opt/airflow/dbt
+
+instead of:
+
+    dbt clean && dbt build
+
+This is correct for scheduled execution.
+
+`dbt clean` can remain a manual development command.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 11. GITHUB USERNAME BUG — FIXED
+============================================================
+
+The KPI model now uses:
+
+    u.user_login as github_username
+
+instead of:
+
+    u.user_id as github_username
+
+Correct.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 12. MEDIAN KPI NAMING — FIXED
+============================================================
+
+The dashboard now displays:
+
+    Avg Repo Median Close
+    Avg Repo Median Merge
+
+and the calculation is:
+
+    mean(repository median values)
+
+This is mathematically consistent.
+
+It no longer falsely claims to be:
+
+    global median
+
+Good.
+
+The PR Complexity tab also uses an actual median for:
+
+    Median Merge Time
+
+which is correct.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 13. EXTRACTOR DEAD `results` STRUCTURE — FIXED
+============================================================
+
+This was partially addressed.
+
+`extract_repository_metadata()` now returns:
+
+    list[int]
+
+containing PR numbers.
+
+The old:
+
+    results
+
+tuple containing temporary-file information is gone.
+
+This is a real cleanup from the previous architecture.
+
+Good.
+
+## Remaining stale documentation
+
+The function docstring and comments should be checked for old wording about
+temporary files.
+
+The implementation itself is now clean on this point.
+
+## Status
+
+FIXED / minor documentation cleanup only.
+
+
+============================================================
+# 14. TEMPFILE ARCHITECTURE — MOSTLY FIXED
+============================================================
+
+The actual implementation no longer uses temporary files.
+
+The architecture documentation correctly says:
+
+    records are streamed directly from GitHub into S3
+
+and:
+
+    no local temporary files are used.
+
+That is correct.
+
+There are still some references to "temp" in places, but these are mostly
+generic words such as:
+
+    temporary connection drops
+
+rather than references to the old tempfile architecture.
+
+The large stale tempfile issue from the previous audit has effectively been
+resolved.
+
+## Status
+
+FIXED.
+
+
+============================================================
+# 15. NEW CODE-QUALITY ISSUE — `ponytail` COMMENTS
+============================================================
+
+There are multiple comments such as:
+
+    # ponytail: ...
+
+throughout the code.
+
+Examples:
+
+    # ponytail: generator instead of list accumulation
+    # ponytail: handle temporary connection drops to S3
+    # ponytail: delete existing objects
+    # ponytail: skip repo_id
+    # ponytail: hard deletes on GitHub won't trigger...
+
+These comments are unusual and reduce the professional appearance of the
+repository.
+
+They look like internal implementation/audit markers rather than normal
+engineering comments.
+
+## Fix
+
+Replace:
+
+    # ponytail: generator instead of list accumulation
+
+with:
+
+    # Use a generator to avoid materializing large API responses in memory.
+
+Replace:
+
+    # ponytail: handle temporary connection drops to S3
+
+with:
+
+    # Configure botocore retries for transient S3 connection failures.
+
+And so on.
+
+Most importantly, remove the `ponytail` marker from:
+
+    fact_releases.sql
+
+because that comment describes a limitation that you should actually fix.
+
+## Status
+
+P2 — cleanup recommended.
+
+
+============================================================
+# 16. README STILL CALLS THE PROJECT "PRODUCTION-GRADE"
+============================================================
+
+README currently says:
+
+    "This project implements a production-grade data pipeline..."
+
+I would still change this.
+
+The architecture is strong, but you do not yet have:
+
+- Python unit tests
+- CI
+- complete release dimensional modeling
+- fully resolved historical SCD semantics
+- production secrets management
+- full operational validation
+
+Therefore:
+
+    production-grade
+
+is too strong.
+
+## Better wording
+
+Use:
+
+    "This project implements an end-to-end production-oriented Data
+    Engineering pipeline..."
+
+or:
+
+    "This project demonstrates production-style Data Engineering practices..."
+
+That is accurate without overselling.
+
+## Status
+
+P2 — portfolio credibility.
+
+
+============================================================
+# 17. README "REAL-TIME" CLAIM IS INACCURATE
+============================================================
+
+The dashboard header says:
+
+    "Real-time insights..."
+
+but also says:
+
+    "Data refreshed daily"
+
+This is contradictory.
+
+The pipeline is:
+
+    daily batch
+
+not:
+
+    real-time / streaming
+
+DuckDB can provide real-time INTERACTION against the exported data, but the
+data itself is not real-time.
+
+## Fix
+
+Change:
+
+    Real-time insights from X open-source repositories
+
+to:
+
+    Daily analytics from X open-source repositories
+
+or:
+
+    Interactive analytics from X open-source repositories
+
+
+============================================================
+# 18. README PROJECT STRUCTURE IS SLIGHTLY STALE
+============================================================
+
+README says:
+
+    s3_writer.py # S3 upload (single file + chunked streaming)
+
+The current implementation is fundamentally streaming/chunked.
+
+"single file + chunked streaming" is not particularly clear.
+
+Change to:
+
+    s3_writer.py # Chunked streaming NDJSON uploads to S3
+
+Similarly, the documentation should describe:
+
+    immutable logical resource partition
+
+rather than implying a single output file.
+
+
+============================================================
+# 19. DEVELOPMENT CREDENTIAL DEFAULTS STILL EXIST
+============================================================
+
+Docker Compose still contains defaults such as:
+
+    POSTGRES_PASSWORD:-airflow
+    AIRFLOW_ADMIN_USERNAME:-admin
+    AIRFLOW_ADMIN_PASSWORD:-admin
+    AIRFLOW_SECRET_KEY:-'a_very_secret_key_for_airflow_logs'
+
+These are acceptable for a local demo.
+
+They should not be described as production configuration.
+
+## Recommended fix
+
+Use:
+
+    AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+    AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
+    AIRFLOW_SECRET_KEY=${AIRFLOW_SECRET_KEY}
+
+with:
+
+    .env.example
+
+The README should explain that local credentials are development-only.
+
+This is not a portfolio blocker.
+
+## Status
+
+P2.
+
+
+============================================================
+# 20. README CREDENTIAL EXAMPLES SHOULD BE CLEARER
+============================================================
+
+README contains examples resembling:
+
+    AKIAXXXXXXXXXXXX
+    dapiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+These are clearly placeholders, so there is no credential leak.
+
+However, clearer placeholders would be:
+
+    <AWS_ACCESS_KEY_ID>
+    <AWS_SECRET_ACCESS_KEY>
+    <DATABRICKS_TOKEN>
+
+This makes accidental copy/paste less likely.
+
+P2 only.
+
+
+============================================================
+# 21. GITHUB API CLIENT — ADD 429 HANDLING
+============================================================
+
+I found one additional robustness issue in the HTTP client.
+
+The client explicitly handles:
+
+    HTTP 403
+    rate limit
+
+but generic:
+
+    HTTP 429
+
+falls through to:
+
+    4xx → fail fast
+
+GitHub commonly uses 403 for rate-limit conditions, but handling 429 is still
+a worthwhile defensive improvement.
+
+## Fix
+
+Treat:
+
+    429
+
+as retryable/rate-limit behavior.
+
+Use:
+
+    Retry-After
+
+when available.
+
+Otherwise fall back to:
+
+    X-RateLimit-Reset
+
+or exponential backoff.
+
+Conceptually:
+
+    if status_code == 429:
+        wait according to Retry-After
+        retry
+
+This is a small improvement but makes the API client more robust.
+
+## Status
+
+P2/P1 depending on how broadly you want to claim API resilience.
+
+
+============================================================
+# 22. S3 WRITER DOCSTRING HAS A SMALL SEMANTIC MISMATCH
+============================================================
+
+The S3 writer says:
+
+    "if a long-running extraction crashes midway, Airflow can retry without
+    losing the successfully uploaded parts"
+
+But the retry path deliberately purges the old parts before rewriting them.
+
+Therefore the successfully uploaded parts are NOT retained across the retry.
+
+What actually happens is:
+
+    partial upload
+        ↓
+    task fails
+        ↓
+    retry
+        ↓
+    old parts purged
+        ↓
+    extraction restarted
+        ↓
+    data rewritten
+
+This is still valid.
+
+But the docstring is misleading.
+
+## Fix
+
+Say:
+
+    "Chunked writes limit memory usage and allow failed extractions to be
+    safely retried by purging the partial output before rewriting the
+    repository partition."
+
+
+============================================================
+# 23. S3 DESIGN — EMPTY RESOURCE CASE
+============================================================
+
+The writer purges the existing prefix before writing.
+
+If an incremental run returns:
+
+    0 records
+
+then the old data is deleted and no new part files are written.
+
+For some resources, that may be correct.
+
+For example, if:
+
+    no new releases
+
+you could accidentally remove the previous raw release dataset for that
+ingestion partition.
+
+However, your release resource is described as a full-population extraction,
+so this needs careful distinction.
+
+The larger issue is that raw data is partitioned by:
+
+    ingestion_date
+
+and each daily partition is independently loaded into Bronze.
+
+If a full-population resource legitimately returns zero records, an empty
+partition may be correct.
+
+For incremental resources, however, zero records means:
+
+    no changes
+
+not:
+
+    source has zero records.
+
+The current writer treats both cases identically.
+
+## Recommendation
+
+Do not create an immediate redesign.
+
+Instead, make the semantic distinction explicit:
+
+    full resource:
+        empty output = valid empty dataset
+
+    incremental resource:
+        empty output = no new records
+
+For incremental resources, consider writing an explicit run marker/manifest
+even when zero records are returned.
+
+This becomes especially useful with immutable run architecture.
+
+P2.
+
+
+============================================================
+# 24. SCD2 + FACT RELATIONSHIP NEEDS A FINAL DESIGN DECISION
+============================================================
+
+At this point, I would stop making small patches and make one deliberate
+decision.
+
+You currently have:
+
+    dim_repositories
+        SCD2
+
+and:
+
+    fact_issues
+        repository_sk
+
+    fact_pull_requests
+        repository_sk
+
+
+The intended relationship is:
+
+    fact event
+        ↓
+    repository state at event time
+
+
+That is only possible if historical repository states are actually available.
+
+They aren't.
+
+Therefore choose one:
+
+### Design A — Current repository dimension
+
+    dim_repositories_current
+        one row per repo
+
+Facts reference this.
+
+SCD2 history remains available separately.
+
+### Design B — Observation-time SCD
+
+Facts reference the repository state observed by the pipeline.
+
+Documentation explicitly states that historical source state is approximate.
+
+### Design C — True historical repository reconstruction
+
+Would require historical source snapshots.
+
+This is unnecessary for the portfolio.
+
+## Recommendation
+
+Use Design A.
+
+It is simpler and more semantically honest.
+
+
+============================================================
+# 25. TESTING IS STILL THE BIGGEST MISSING ENGINEERING PRACTICE
+============================================================
+
+There are still no Python tests.
+
+Current dbt tests are useful, but they don't replace Python unit tests.
+
+Minimum:
+
+    tests/
+        test_github_client.py
+        test_extractor.py
+        test_s3_writer.py
+        test_normalizer.py
+        test_repo_config.py
+
+Target:
+
+    15–25 meaningful tests
+
+
+Highest-value cases:
+
+GitHub:
+
+    [ ] pagination
+    [ ] 403 rate limit
+    [ ] 429 rate limit
+    [ ] 500 retry
+    [ ] network failure
+    [ ] retry exhaustion
+
+Extractor:
+
+    [ ] full extraction
+    [ ] incremental extraction
+    [ ] empty result
+    [ ] PR extraction
+    [ ] GraphQL enrichment
+
+S3:
+
+    [ ] chunking
+    [ ] empty input
+    [ ] upload retry
+    [ ] deletion failure
+    [ ] retry cleanup
+
+Watermarks:
+
+    [ ] first run
+    [ ] existing watermark
+    [ ] overlap window
+    [ ] Bronze failure
+    [ ] successful watermark commit
+
+Do not chase 100% coverage.
+
+Test failure behavior and critical boundaries.
+
+
+============================================================
+# 26. CI/CD IS STILL MISSING
+============================================================
+
+There is still no:
+
+    .github/workflows/
+
+workflow.
+
+Add:
+
+    .github/
+        workflows/
+            ci.yml
+
+Minimum:
+
+    checkout
+        ↓
+    setup Python
+        ↓
+    install dependencies
+        ↓
+    ruff
+        ↓
+    pytest
+        ↓
+    compileall
+        ↓
+    YAML validation
 
 Optional:
 
-dbt parse
+    dbt parse
 
 
-Do NOT require a live Databricks environment for basic CI.
+You do NOT need:
 
+- Kubernetes
+- Terraform
+- deployment pipelines
+- cloud infrastructure automation
 
-Recommended CI checks:
-
-ruff check .
-pytest
-python -m compileall .
-YAML parsing
-
-
-Optional:
-
-dbt parse --profiles-dir ...
-
-
-CI should validate the repository on every:
-
-push
-pull request
-
-
-Deployment automation is not necessary for this student portfolio.
+A simple CI workflow is enough for this portfolio.
 
 
 ============================================================
-FINAL WATERMARK DESIGN
+# 27. FINAL STATUS OF THE PREVIOUS AUDIT ITEMS
 ============================================================
 
-The recommended final implementation is:
-
-1. Read previous successful watermark.
-
-2. Calculate:
-
-lower_bound =
-previous_watermark - safety_window
-
-
-3. Capture:
-
-extraction_boundary =
-current UTC timestamp
-
-
-4. Extract all records:
-
-updated_at >= lower_bound
-AND
-updated_at < extraction_boundary
-
-
-5. Write raw S3 data.
-
-6. Load Bronze.
-
-7. If Bronze succeeds:
-
-commit:
-
-watermark = extraction_boundary
-
-
-8. Run dbt.
-
-9. Export Gold data.
-
-
-Important:
-
-The watermark represents the SOURCE EXTRACTION BOUNDARY that has been
-successfully processed.
-
-It must NOT represent the time at which the watermark task happened.
+| Issue | Status |
+|---|---|
+| Airflow Docker requirements | FIXED |
+| S3 IAM/delete contradiction | FIXED |
+| S3 deletion failure swallowed | FIXED |
+| Watermark advanced before Bronze | FIXED |
+| Watermark timestamp timing | FIXED |
+| GitHub username as user ID | FIXED |
+| Median KPI naming | FIXED |
+| Artificial 1900 SCD date | FIXED |
+| Dynamic mapping documentation | MOSTLY FIXED |
+| Temporary-file architecture | FIXED |
+| Extractor dead results structure | FIXED |
+| `dbt clean` every run | FIXED |
+| fact_releases repository FK | NOT FIXED |
+| SCD2 historical semantics | NEEDS FINAL DESIGN |
+| SCD2 → fact FK nullability | NEW IMPORTANT ISSUE |
+| Python tests | NOT IMPLEMENTED |
+| CI/CD | NOT IMPLEMENTED |
+| Hardcoded development defaults | STILL PRESENT |
+| README production-grade claim | STILL TOO STRONG |
+| README real-time claim | STILL INACCURATE |
+| 429 API handling | RECOMMENDED |
+| S3 retry docstring | NEEDS CLEANUP |
+| `ponytail` comments | NEEDS CLEANUP |
 
 
 ============================================================
-FINAL AIRFLOW DESIGN
+# 28. WHAT I WOULD FIX BEFORE SUBMISSION
 ============================================================
 
-Recommended semantics:
-
-extract_repo[repo1]
-extract_repo[repo2]
-extract_repo[repo3]
-...
-        ↓
-ALL extraction tasks succeed
-        ↓
-Bronze
-        ↓
-watermark commit
-        ↓
-dbt
-        ↓
-Gold
-        ↓
-Parquet
-        ↓
-Streamlit
+Do these in this order.
 
 
-This is an intentional:
+## MUST FIX
 
-ALL-OR-NOTHING DAILY BATCH
+### 1. Resolve repository dimension semantics
+
+Choose:
+
+    dim_repositories_current
+
+for fact foreign keys.
+
+Keep:
+
+    dim_repositories
+
+as SCD2 history.
+
+This solves the historical fact → repository_sk null problem without inventing
+1900-era repository states.
 
 
-Document it that way.
+### 2. Add repository relationship to fact_releases
 
-Dynamic Task Mapping provides:
+Carry:
 
-- independent task instances
-- repository-level execution
-- parallelism
-- retry isolation
+    repo_full_name
 
+through the release transformation and resolve it to:
 
-It does NOT mean:
-
-"one repository can fail while the rest of the downstream pipeline continues."
-
-
-============================================================
-FINAL DATA MODEL
-============================================================
-
-Recommended:
-
-dim_repositories
     repository_sk
-    repository_id
-    repository_name
-    ...
+    repo_id
 
 
-dim_users
-    user_sk
-    user_id
-    user_login
-    ...
+### 3. Fix SCD2 documentation
 
+Explicitly distinguish:
 
-dim_date
-    date_key
-    ...
+    observed state
 
+from:
 
-fact_issues
-    issue_sk
-    repository_sk
-    user_sk
-    created_date_key
-    ...
-
-
-fact_pull_requests
-    pr_sk
-    repository_sk
-    user_sk
-    created_date_key
-    ...
-
-
-fact_releases
-    release_sk
-    repository_sk
-    author_user_sk
-    published_date_key
-    ...
-
-
-All foreign-key relationships should be validated using dbt tests.
+    true historical source state.
 
 
 ============================================================
-FINAL DOCUMENTATION RULES
+# SHOULD FIX
 ============================================================
 
-Documentation should explicitly state:
+### 4. Add 429 handling
 
-1. Raw data is streamed directly to S3.
-2. There is no tempfile-based extraction architecture.
-3. Bronze is loaded after all mapped repository extractions succeed.
-4. Watermarks advance only after Bronze succeeds.
-5. Watermarks represent the extraction boundary.
-6. A safety overlap is used for incremental extraction.
-7. Repository SCD2 represents observed repository states.
-8. SCD2 does not reconstruct perfect GitHub historical metadata.
-9. DuckDB is the lightweight serving layer for Streamlit.
-10. Databricks remains the transformation/analytical platform.
-11. Development credentials are not production credentials.
+### 5. Clean stale `ponytail` comments
 
+### 6. Fix S3 writer docstring
 
-============================================================
-FINAL REMEDIATION ORDER
-============================================================
+### 7. Remove remaining misleading extractor failure-isolation wording
 
-PHASE 1 — Correctness
+### 8. Change README "production-grade"
 
-[ ] Fix extraction boundary / watermark implementation
-[ ] Update watermark tests
-[ ] Correct Dynamic Task Mapping documentation
-[ ] Add repository relationship to fact_releases
-[ ] Correct SCD2 documentation
+### 9. Change README "real-time"
 
-
-PHASE 2 — Cleanup
-
-[ ] Remove tempfile references
-[ ] Remove obsolete extractor `results`
-[ ] Remove unused imports
-[ ] Remove `dbt clean` from scheduled DAG
-[ ] Consolidate Airflow dependencies
-[ ] Externalize development credentials
-
-
-PHASE 3 — Testing
-
-[ ] Add GitHub client tests
-[ ] Add extractor tests
-[ ] Add S3 writer tests
-[ ] Add GraphQL tests
-[ ] Add watermark tests
-[ ] Add configuration tests
-[ ] Add dbt tests for new repository relationships
-
-
-PHASE 4 — CI
-
-[ ] Add GitHub Actions
-[ ] Run Ruff
-[ ] Run pytest
-[ ] Run compileall
-[ ] Validate YAML
-[ ] Optionally run dbt parse
-
-
-PHASE 5 — Final Validation
-
-[ ] Build Airflow Docker image from clean checkout
-[ ] Start Docker Compose
-[ ] Validate Airflow DAG import
-[ ] Run a full extraction
-[ ] Verify S3 raw data
-[ ] Verify Bronze
-[ ] Verify dbt
-[ ] Verify Gold
-[ ] Verify Parquet export
-[ ] Verify DuckDB
-[ ] Verify Streamlit
-[ ] Test an intentional extraction failure
-[ ] Test an intentional Bronze failure
-[ ] Verify watermark does not advance incorrectly
-[ ] Verify retry behavior
-[ ] Verify documentation matches implementation
+### 10. Remove development credential defaults or label them clearly
 
 
 ============================================================
-FINAL STAFF DATA ENGINEER SIGN-OFF CRITERIA
+# THEN ADD TESTING
 ============================================================
 
-Before calling the project finished, the following should be true:
+Target:
 
-[ ] Docker build works from a clean checkout
-[ ] Airflow starts successfully
-[ ] DAG imports successfully
-[ ] GitHub extraction works
-[ ] Rate limiting works
-[ ] Retry behavior works
-[ ] S3 writes are deterministic
-[ ] Bronze is idempotent
-[ ] Watermark represents a real extraction boundary
-[ ] Watermark only advances after successful Bronze
-[ ] Failed runs are safely replayable
-[ ] fact_releases has repository relationship
-[ ] SCD2 documentation accurately describes its semantics
-[ ] Dashboard metrics have mathematically correct names
-[ ] Python tests exist
-[ ] CI exists
-[ ] Documentation matches the current implementation
-[ ] No obsolete tempfile architecture remains
-[ ] No unnecessary production claims remain
+    15–25 focused Python tests
 
 
 ============================================================
-FINAL ASSESSMENT
+# THEN ADD CI
 ============================================================
 
-Current project:
-
-Portfolio value:
-HIGH
-
-Data Engineering breadth:
-HIGH
-
-Architecture:
-STRONG
-
-Data modeling:
-STRONG
-
-Ingestion:
-STRONG
-
-Data quality:
-STRONG
-
-Documentation:
-STRONG, but needs final consistency cleanup
-
-Testing:
-CURRENTLY WEAK
-
-CI/CD:
-CURRENTLY MISSING
-
-Operational reliability:
-GOOD, but watermark semantics need one final correction
-
-Production readiness:
-NOT YET
-
-Student portfolio readiness:
-STRONG
+One GitHub Actions workflow.
 
 
-CURRENT RATING:
+============================================================
+# 29. FINAL ARCHITECTURE I WOULD SIGN OFF ON
+============================================================
 
-~8.5/10
+GitHub REST + GraphQL
+        |
+        v
+Airflow Dynamic Task Mapping
+        |
+        v
+Python Streaming Extractors
+        |
+        v
+S3 Raw
+        |
+        v
+Databricks Bronze
+        |
+        v
+Watermark Commit
+        |
+        v
+dbt Staging
+        |
+        v
+dbt Intermediate + DQ
+        |
+        +-------------------+
+        |                   |
+        v                   v
+   SCD2 History        Current State
+        |                   |
+        +---------+---------+
+                  |
+                  v
+             Gold Facts
+                  |
+          +-------+-------+
+          |       |       |
+          v       v       v
+       Issues    PRs   Releases
+          |
+          v
+       KPI Models
+          |
+          v
+      S3 Parquet
+          |
+          v
+        DuckDB
+          |
+          v
+      Streamlit
 
 
-EXPECTED RATING AFTER THESE FIXES:
+Repository modeling:
 
-~9/10
+    dim_repositories
+        = SCD2 historical observation history
 
+    dim_repositories_current
+        = one current row per repository
 
-MOST IMPORTANT REMAINING TECHNICAL FIX:
+    facts
+        = reference current repository identity
 
-Fix the watermark to commit the actual extraction boundary rather than the
-timestamp generated by the later watermark task.
-
-
-MOST IMPORTANT DOCUMENTATION FIX:
-
-Stop claiming repository-level downstream fault isolation from Dynamic Task
-Mapping. The current architecture is an intentional all-or-nothing daily
-batch.
+This is cleaner than pretending you have historical GitHub repository state
+that the API extraction never captured.
 
 
-MOST IMPORTANT DATA-MODELING FIX:
+============================================================
+# 30. FINAL RATING
+============================================================
 
-Add repository relationship to fact_releases.
+Current:
+
+    8.5 / 10
+
+For a 4th-year Data Engineering student:
+
+    Strong
+
+Compared with typical student portfolio projects:
+
+    Significantly above average in architecture and DE breadth
 
 
-MOST IMPORTANT ENGINEERING-MATURITY ADDITION:
+After fixing:
 
-Add approximately 15–25 focused tests and a simple GitHub Actions CI workflow.
+    repository SCD/fact semantics
+    release repository relationship
+    tests
+    CI
+    remaining documentation/code-quality issues
+
+Expected:
+
+    ~9 / 10
 
 
-DO NOT ADD ANOTHER TECHNOLOGY.
+============================================================
+# FINAL STAFF-LEVEL VERDICT
+============================================================
 
-The architecture is already sufficiently complex.
+The project has reached the point where I would NOT recommend adding any more
+technologies.
 
-The remaining improvement should come from:
+You already have enough:
 
-correctness
-+
-reliability
-+
-testing
-+
-CI
-+
-semantic precision
-+
-documentation consistency
+    Python
+    REST
+    GraphQL
+    S3
+    Airflow
+    Databricks
+    PySpark
+    Delta
+    dbt
+    SCD2
+    DQ
+    DuckDB
+    Streamlit
+
+
+The remaining work is engineering maturity.
+
+The most important unresolved problem is now:
+
+    repository dimension semantics
+
+because removing the artificial 1900 validity date was correct, but it means
+historical issues/PRs can fail to find a valid repository SCD row.
+
+The second important issue is:
+
+    fact_releases missing repository relationship
+
+
+After those are resolved, the remaining work is mostly:
+
+    tests
+    CI
+    cleanup
+    documentation precision
+
+
+I would consider the project essentially architecturally complete after those
+changes.
+
+Do NOT add Kafka, Kubernetes, Terraform, Snowflake, another warehouse, another
+orchestrator, or another serving layer just to make the stack larger.
+
+At this stage:
+
+    correctness > complexity
+    reliability > technology count
+    tests > another framework
+    CI > another infrastructure component
+    semantic precision > architectural buzzwords
+
+
+Final target:
+
+    A technically defensible, testable, reproducible 4th-year DE portfolio
+    project rather than merely a project containing many DE technologies.

@@ -60,7 +60,7 @@ class GitHubClient:
         By streaming records as a generator instead of returning a massive list, we prevent 
         OOM kills in the Airflow worker when extracting repos with hundreds of thousands of issues.
         """
-        # ponytail: generator instead of list accumulation — fixes OOM for large repos
+        # Use a generator instead of list accumulation to prevent OOM for large repos
         url = f"{self.BASE_URL}{endpoint}"
         request_params = dict(params or {})
         request_params.setdefault("per_page", 100)
@@ -130,15 +130,23 @@ class GitHubClient:
                 else:
                     return response
 
-            # Rate limit 403 — sleep until reset and retry
+            # Rate limit 403 or 429 — sleep until reset and retry
             remaining = response.headers.get("X-RateLimit-Remaining")
-            if response.status_code == 403 and (
+            is_403_rate_limit = response.status_code == 403 and (
                 remaining == "0" or "rate limit" in response.text.lower()
-            ):
-                reset_ts = int(response.headers.get("X-RateLimit-Reset", 0))
-                wait = max(reset_ts - int(time.time()), 1) + 2
+            )
+            is_429 = response.status_code == 429
+
+            if is_403_rate_limit or is_429:
+                retry_after = response.headers.get("Retry-After")
+                if retry_after:
+                    wait = int(retry_after) + 1
+                else:
+                    reset_ts = int(response.headers.get("X-RateLimit-Reset", 0))
+                    wait = max(reset_ts - int(time.time()), 1) + 2
+                
                 self._log.warning(
-                    f"Rate limit exceeded (HTTP 403) for {url}, sleeping {wait}s until reset"
+                    f"Rate limit exceeded (HTTP {response.status_code}) for {url}, sleeping {wait}s until reset"
                 )
                 time.sleep(wait)
                 continue

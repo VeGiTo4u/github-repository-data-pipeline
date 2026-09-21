@@ -3,7 +3,7 @@ import boto3
 from botocore.config import Config
 from ingestion.logger import get_logger
 
-# ponytail: chunk size trades off S3 PUT count vs resilience — 5000 records
+# Chunk size trades off S3 PUT count vs resilience — 5000 records
 # (~5-10 MB) is small enough for fast uploads, large enough to avoid thousands of PUTs
 STREAM_CHUNK_SIZE = 5000
 
@@ -38,11 +38,11 @@ def stream_records_to_s3(
         client_kwargs["aws_access_key_id"] = aws_access_key_id
         client_kwargs["aws_secret_access_key"] = aws_secret_access_key
 
-    # ponytail: handle temporary connection drops to S3
+    # Configure botocore retries for transient S3 connection failures
     retry_config = Config(retries={"max_attempts": 10, "mode": "standard"})
     s3 = boto3.client("s3", config=retry_config, **client_kwargs)
 
-    # ponytail: delete existing objects in prefix to prevent dangling parts on retry
+    # Delete existing objects in prefix to prevent dangling parts on retry
     try:
         s3_resource = boto3.resource("s3", config=retry_config, **client_kwargs)
         bucket_obj = s3_resource.Bucket(bucket)

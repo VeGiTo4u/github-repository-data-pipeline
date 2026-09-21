@@ -31,10 +31,8 @@ select
     p._extraction_run_id,
     current_timestamp() as _gold_update_ts
 from {{ ref('snap_pull_requests') }} p
-left join {{ ref('dim_repositories') }} r
+left join {{ ref('dim_repositories_current') }} r
   on p.repository_id = r.repo_id
-  and p.created_at >= r.valid_from
-  and p.created_at < coalesce(r.valid_to, cast('9999-12-31' as timestamp))
 where p.dbt_valid_to is null
 {% if is_incremental() %}
   and p.updated_at >= (select coalesce(max(updated_at) - interval 3 days, cast('1900-01-01' as timestamp)) from {{ this }})

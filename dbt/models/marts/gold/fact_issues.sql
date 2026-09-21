@@ -25,10 +25,8 @@ select
     i._extraction_run_id,
     current_timestamp() as _gold_update_ts
 from {{ ref('snap_issues') }} i
-left join {{ ref('dim_repositories') }} r
+left join {{ ref('dim_repositories_current') }} r
   on i.repository_id = r.repo_id
-  and i.created_at >= r.valid_from
-  and i.created_at < coalesce(r.valid_to, cast('9999-12-31' as timestamp))
 where i.dbt_valid_to is null
   and i.is_pull_request = false
 {% if is_incremental() %}
