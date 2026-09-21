@@ -6,6 +6,10 @@
 </p>
 
 <p align="center">
+  <a href="https://repository-data-pipeline.streamlit.app/"><img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit"></a>
+</p>
+
+<p align="center">
   <a href="#architecture">Architecture</a> •
   <a href="#tech-stack">Tech Stack</a> •
   <a href="#data-model">Data Model</a> •
@@ -358,6 +362,8 @@ The ingestion module extracts data from the GitHub API with several production-h
 ---
 
 ## Dashboard
+
+> **🔗 Live Demo: [repository-data-pipeline.streamlit.app](https://repository-data-pipeline.streamlit.app/)**
 
 The Streamlit dashboard provides four interactive views:
 
