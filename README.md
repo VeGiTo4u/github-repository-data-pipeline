@@ -72,30 +72,22 @@ The pipeline implements a **Kimball-style star schema** in the Gold layer, fed b
 ### Gold Layer (Star Schema)
 
 ```text
-                            ┌─────────────────┐
-                            │  dim_date       │
-                            │  (date_key PK)  │
-                            └────────┬────────┘
-                                     │
-┌───────────────────┐    ┌───────────┴──────────┐    ┌──────────────────┐
-│  dim_repositories │    │    fact_issues       │    │    dim_users     │
-│  (_current)       │◀───│  (issue_sk PK)       │───▶│  (user_sk PK)    │
-│  (repository_sk)  │    │  Accumulating Snap.  │    │  Type 1          │
-└───────────────────┘    └──────────────────────┘    └──────────────────┘
-         ▲                                                    ▲
-         │               ┌──────────────────────┐             │
-         ├───────────────│  fact_pull_requests  │─────────────┤
-         │               │  (pull_request_sk PK)│             │
-         │               │  Accumulating Snap.  │             │
-         │               └──────────────────────┘             │
-         │                                                    │
-         │               ┌──────────────────────┐             │
-         └───────────────│   fact_releases      │─────────────┘
-                         │  (release_sk PK)     │
-                         │  Transactional Fact  │
-                         └──────────────────────┘
-
-(Note: History is tracked via a separate Type-2 `dim_repositories` SCD model)
+                 ┌─────────────────────────┐
+                 │  dim_repositories       │
+                 │  SCD2 history            │
+                 └────────────┬────────────┘
+                              │
+                              │ historical
+                              │
+                 ┌────────────▼────────────┐
+                 │ dim_repositories_current│
+                 │ stable repository key   │
+                 └────────────┬────────────┘
+                              │
+             ┌────────────────┼────────────────┐
+             │                │                │
+             ▼                ▼                ▼
+       fact_issues     fact_pull_requests   fact_releases
 ```
 
 ### KPI Tables (Dashboard-Ready)
@@ -267,7 +259,7 @@ streamlit run app.py
 The ingestion module extracts data from the GitHub API with several production-hardened patterns:
 
 - **Dynamic Task Mapping**: Each repository is processed by an independent Airflow task instance, enabling parallel extraction and retry isolation at the task-instance level. Downstream Bronze processing intentionally requires the complete mapped extraction stage to succeed, forming an all-or-nothing daily batch design.
-- **Generator-Based Streaming**: `GitHubClient.get()` yields records one page at a time via Python generators, keeping memory footprint at exactly 1 API page (~100 records) regardless of total volume. This prevents OOM on repos with 170K+ issues.
+- **Generator-Based Streaming**: `GitHubClient.get()` yields records one page at a time via Python generators, keeping memory footprint at approximately one API page (~100 records) at a time regardless of total volume. This prevents OOM on repos with 170K+ issues.
 - **Chunked S3 Uploads**: Large paginated resources (issues, PRs, releases) are streamed directly to S3 in 5,000-record part files via `stream_records_to_s3()`, avoiding the need to hold the full dataset in memory.
 - **Cooperative Throttling**: A tier-based system (`repo_config.py`) assigns API budget thresholds per repository size. Large repos trigger a 1-second cooperative slowdown before exhausting the shared rate limit, preventing starvation of smaller repos.
 - **Per-Repo Watermarks**: Each repository maintains its own `since` timestamp via an individual Airflow Variable, enabling independent incremental extraction with no read-modify-write races.

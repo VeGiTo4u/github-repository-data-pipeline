@@ -263,7 +263,7 @@ repo_count = len(repos)
 st.markdown(f"""
 <div class="dashboard-header">
     <h1>GitHub Repository Analytics</h1>
-    <p>Real-time insights from {repo_count} open-source repositories · Data refreshed daily</p>
+    <p>Interactive analytics from {repo_count} open-source repositories · Data refreshed daily</p>
     <div class="header-badges">
         <span class="header-badge badge-duckdb">DuckDB</span>
         <span class="header-badge badge-airflow">Airflow</span>

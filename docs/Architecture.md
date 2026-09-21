@@ -49,7 +49,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 4. Multi-Repo Scaling & Concurrency (Dynamic Task Mapping)
 
-**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is exactly 1 API page (100 records) regardless of total result size. The extractor streams these directly into S3 multipart uploads via `boto3`, completely bypassing the local file system.
+**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is approximately one API page (~100 records) at a time regardless of total result size. The extractor streams these directly into S3 multipart uploads via `boto3`, completely bypassing the local file system.
 
 **Reason:** 
 - A serial loop would take too long for large backfills. Unbounded parallel tasks would instantly exhaust the GitHub API rate limit.
