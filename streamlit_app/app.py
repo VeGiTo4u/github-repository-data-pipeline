@@ -335,7 +335,7 @@ with tab_overview:
         c5, c6, c7, c8 = st.columns(4)
         c5.metric("Avg Repo Median Close", f"{avg_close:,.0f} hrs" if pd.notna(avg_close) else "—")
         c6.metric("Avg Repo Median Merge", f"{avg_merge:,.0f} hrs" if pd.notna(avg_merge) else "—")
-        c7.metric("Contributors", f"{total_contribs:,}")
+        c7.metric("Community Members", f"{total_contribs:,}")
         c8.metric("Repositories", f"{len(df_health):,}")
 
         st.markdown("")
@@ -405,7 +405,7 @@ with tab_overview:
             y="short_name",
             orientation="h",
             color_discrete_sequence=["#14b8a6"],
-            title="Contributors per Repository",
+            title="Community Members per Repository",
         )
         fig_contrib.update_layout(
             **PLOTLY_LAYOUT,
@@ -638,7 +638,7 @@ with tab_community:
         st.info("No contribution data available.")
     else:
         uc1, uc2, uc3, uc4 = st.columns(4)
-        uc1.metric("Unique Contributors", f"{df_users['user_id'].nunique():,}")
+        uc1.metric("Unique Members", f"{df_users['user_id'].nunique():,}")
         uc2.metric("PRs Merged", f"{int(df_users['total_prs_merged'].sum()):,}")
         uc3.metric("Issues Opened", f"{int(df_users['total_issues_opened'].sum()):,}")
         uc4.metric("Total Comments", f"{int(df_users['total_comments'].sum()):,}")
@@ -646,7 +646,7 @@ with tab_community:
         st.markdown("")
 
         # Leaderboard
-        st.markdown('<div class="section-header">Top Contributors</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Top Community Members</div>', unsafe_allow_html=True)
         df_top = df_users.head(10).copy()
         df_top["short_repo"] = df_top["repo_name"].apply(short_name)
         display_name = "github_username" if "github_username" in df_top.columns else "user_id"
