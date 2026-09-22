@@ -8,7 +8,7 @@
 }}
 
 with dates as (
-    select explode(sequence((select date(min(created_at)) from {{ ref('fact_issues') }}), current_date() + interval 1 year, interval 1 day)) as date_actual
+    select explode(sequence((select coalesce(to_date(cast(min(created_date_key) as string), 'yyyyMMdd'), date('2024-01-01')) from {{ ref('fact_issues') }}), current_date() + interval 1 year, interval 1 day)) as date_actual
 )
 select
     cast(date_format(date_actual, 'yyyyMMdd') as int) as date_key,
