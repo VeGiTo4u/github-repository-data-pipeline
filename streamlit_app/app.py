@@ -311,10 +311,10 @@ tab_overview, tab_trends, tab_prs, tab_community = st.tabs([
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with tab_overview:
     df_health = get_repo_health()
-    if repo_filter:
+    if df_health is not None and repo_filter:
         df_health = df_health[df_health["repo_name"] == repo_filter]
 
-    if df_health.empty:
+    if df_health is None or df_health.empty:
         st.info("No data available for this filter.")
     else:
         total_issues = int(df_health["total_issues"].sum())
@@ -422,7 +422,7 @@ with tab_overview:
 with tab_trends:
     df_ts = get_time_series(repo_filter)
 
-    if df_ts.empty:
+    if df_ts is None or getattr(df_ts, "empty", True):
         st.info("No time-series data available.")
     else:
         df_ts_active = df_ts[
@@ -541,7 +541,7 @@ with tab_trends:
 with tab_prs:
     df_pr = get_pr_complexity(repo_filter)
 
-    if df_pr.empty:
+    if df_pr is None or getattr(df_pr, "empty", True):
         st.info("No PR data available.")
     else:
         merged_prs = df_pr[df_pr["merged_date_key"].notna()]
@@ -634,7 +634,7 @@ with tab_prs:
 with tab_community:
     df_users = get_user_contributions(repo_filter)
 
-    if df_users.empty:
+    if df_users is None or getattr(df_users, "empty", True):
         st.info("No contribution data available.")
     else:
         uc1, uc2, uc3, uc4 = st.columns(4)
