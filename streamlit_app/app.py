@@ -219,6 +219,237 @@ st.markdown("""
         color: #6366f1;
         text-decoration: none;
     }
+
+    /* ── Product visual system ────────────────────────────────────────── */
+    :root {
+        --app-bg: #0b0d10;
+        --app-surface: #11151a;
+        --app-surface-raised: #151a20;
+        --app-line: #252c34;
+        --app-line-strong: #303944;
+        --app-text: #edf1f3;
+        --app-muted: #8d98a5;
+        --app-faint: #5d6875;
+        --app-accent: #ff7a45;
+        --app-teal: #35c6a1;
+    }
+
+    html, body, [class*="css"] {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .stApp {
+        background: var(--app-bg);
+    }
+    .block-container {
+        max-width: 1480px;
+        padding: 2.25rem 3.5rem 2.75rem;
+    }
+    header[data-testid="stHeader"] {
+        background: rgba(11, 13, 16, 0.92);
+    }
+
+    /* Make the hero feel like a product header, not a marketing banner. */
+    .dashboard-header {
+        background: var(--app-surface) !important;
+        border: 1px solid var(--app-line) !important;
+        border-radius: 12px !important;
+        padding: 1.85rem 2.1rem 1.7rem !important;
+        margin-bottom: 1.35rem !important;
+        box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+    }
+    .dashboard-header::before {
+        height: 2px !important;
+        background: var(--app-accent) !important;
+        animation: none !important;
+        opacity: 0.9;
+    }
+    .dashboard-header h1 {
+        font-size: 1.65rem !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.035em !important;
+    }
+    .dashboard-header p {
+        color: var(--app-muted) !important;
+        font-size: 0.84rem !important;
+        margin-top: 0.55rem !important;
+    }
+    .header-badges {
+        gap: 6px !important;
+        margin-top: 1rem !important;
+    }
+    .header-badge {
+        border-radius: 4px !important;
+        padding: 3px 8px !important;
+        font-size: 0.62rem !important;
+        letter-spacing: 0.08em !important;
+    }
+    .badge-duckdb {
+        background: rgba(255, 196, 61, 0.08) !important;
+        border-color: rgba(255, 196, 61, 0.2) !important;
+        color: #e8bb51 !important;
+    }
+    .badge-airflow {
+        background: rgba(89, 161, 226, 0.08) !important;
+        border-color: rgba(89, 161, 226, 0.2) !important;
+        color: #79b8e8 !important;
+    }
+    .badge-dbt {
+        background: rgba(255, 122, 69, 0.08) !important;
+        border-color: rgba(255, 122, 69, 0.2) !important;
+        color: #ff9a70 !important;
+    }
+
+    /* Quiet cards; emphasis comes from type scale, not decoration. */
+    div[data-testid="stMetric"] {
+        background: var(--app-surface) !important;
+        border: 1px solid var(--app-line) !important;
+        border-radius: 9px !important;
+        padding: 1.05rem 1.2rem 1.15rem !important;
+        min-height: 94px;
+        box-shadow: none !important;
+        transition: border-color 0.18s ease, background 0.18s ease;
+    }
+    div[data-testid="stMetric"]:hover {
+        border-color: var(--app-line-strong) !important;
+        background: var(--app-surface-raised) !important;
+        transform: none !important;
+    }
+    div[data-testid="stMetric"] label {
+        color: var(--app-faint) !important;
+        font-size: 0.64rem !important;
+        letter-spacing: 0.11em !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: var(--app-text) !important;
+        font-size: 1.55rem !important;
+        font-weight: 650 !important;
+        letter-spacing: -0.035em;
+        line-height: 1.2;
+    }
+
+    /* Tabs become navigation, not another panel competing with the header. */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1.65rem !important;
+        background: transparent !important;
+        border: 0 !important;
+        border-bottom: 1px solid var(--app-line) !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 0 !important;
+        padding: 0.72rem 0 0.78rem !important;
+        color: var(--app-muted) !important;
+        font-size: 0.77rem !important;
+        font-weight: 550 !important;
+        background: transparent !important;
+        border: 0 !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: var(--app-text) !important;
+        background: transparent !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: var(--app-text) !important;
+        background: transparent !important;
+        font-weight: 650 !important;
+        box-shadow: inset 0 -2px 0 var(--app-accent);
+    }
+    .stTabs [data-baseweb="tab-highlight"],
+    .stTabs [data-baseweb="tab-border"] {
+        display: none !important;
+    }
+
+    .section-header {
+        color: var(--app-muted) !important;
+        border-bottom: 0 !important;
+        margin: 1.85rem 0 0.9rem !important;
+        padding-bottom: 0 !important;
+        font-size: 0.68rem !important;
+        font-weight: 650 !important;
+        letter-spacing: 0.12em !important;
+        text-transform: uppercase;
+    }
+    .section-header::before {
+        content: "";
+        display: inline-block;
+        width: 18px;
+        height: 2px;
+        margin: 0 8px 3px 0;
+        background: var(--app-accent);
+    }
+
+    /* Streamlit's bordered containers give chart groups a consistent edge. */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: var(--app-surface);
+        border-color: var(--app-line) !important;
+        border-radius: 9px !important;
+    }
+    .js-plotly-plot {
+        border-radius: 6px;
+    }
+
+    /* Sidebar becomes a simple filter rail. */
+    section[data-testid="stSidebar"] {
+        background: #0e1115 !important;
+        border-right: 1px solid var(--app-line) !important;
+    }
+    section[data-testid="stSidebar"] > div:first-child {
+        padding: 2rem 1.2rem 1.5rem !important;
+    }
+    section[data-testid="stSidebar"] .stMarkdown h3 {
+        color: var(--app-muted) !important;
+        font-size: 0.66rem !important;
+        letter-spacing: 0.13em !important;
+        margin-bottom: 0.85rem !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox label {
+        color: var(--app-faint) !important;
+        font-size: 0.72rem !important;
+    }
+    section[data-testid="stSidebar"] [data-baseweb="select"] > div {
+        background: var(--app-surface) !important;
+        border-color: var(--app-line) !important;
+        border-radius: 6px !important;
+    }
+    section[data-testid="stSidebar"] hr {
+        border-color: var(--app-line) !important;
+        margin: 1.5rem 0 !important;
+    }
+    section[data-testid="stSidebar"] .stCaption,
+    section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: var(--app-faint) !important;
+        line-height: 1.65 !important;
+        font-size: 0.7rem !important;
+    }
+
+    hr {
+        border-color: var(--app-line) !important;
+    }
+    .dashboard-footer {
+        color: var(--app-faint) !important;
+        border-top: 1px solid var(--app-line);
+        margin-top: 2.75rem;
+        padding: 1.15rem 0 0.25rem !important;
+        font-size: 0.68rem !important;
+        letter-spacing: 0.02em;
+    }
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--app-line);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    @media (max-width: 900px) {
+        .block-container {
+            padding: 1.25rem 1rem 2rem;
+        }
+        .dashboard-header {
+            padding: 1.5rem 1.35rem 1.35rem !important;
+        }
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 0.9rem !important;
+        }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -233,26 +464,36 @@ from queries import (
 
 # ── Plotly Theme ─────────────────────────────────────────────────────────────
 PLOTLY_LAYOUT = dict(
-    template="plotly_dark",
+    template="none",
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Inter, sans-serif", size=12, color="#94a3b8"),
-    title_font=dict(size=14, color="#e2e8f0", family="Inter, sans-serif"),
-    margin=dict(l=50, r=20, t=50, b=60),
+    font=dict(family="Inter, sans-serif", size=11, color="#8d98a5"),
+    title_font=dict(size=13, color="#edf1f3", family="Inter, sans-serif"),
+    margin=dict(l=48, r=18, t=54, b=65),
     xaxis=dict(
-        gridcolor="rgba(51,65,85,0.5)",
-        zerolinecolor="rgba(51,65,85,0.5)",
-        tickfont=dict(size=10),
+        gridcolor="rgba(141,152,165,0.13)",
+        zerolinecolor="rgba(141,152,165,0.13)",
+        linecolor="rgba(141,152,165,0.18)",
+        tickfont=dict(size=10, color="#75808c"),
+        title_font=dict(size=10, color="#75808c"),
     ),
     yaxis=dict(
-        gridcolor="rgba(51,65,85,0.5)",
-        zerolinecolor="rgba(51,65,85,0.5)",
-        tickfont=dict(size=10),
+        gridcolor="rgba(141,152,165,0.13)",
+        zerolinecolor="rgba(141,152,165,0.13)",
+        linecolor="rgba(141,152,165,0.18)",
+        tickfont=dict(size=10, color="#75808c"),
+        title_font=dict(size=10, color="#75808c"),
+    ),
+    hoverlabel=dict(
+        bgcolor="#1b222a",
+        bordercolor="#303944",
+        font=dict(family="Inter, sans-serif", size=11, color="#edf1f3"),
     ),
 )
 
-# Curated palette — indigo / violet / teal / amber / rose
-COLORS = ["#6366f1", "#8b5cf6", "#14b8a6", "#f59e0b", "#f43f5e", "#06b6d4", "#a78bfa"]
+# A restrained palette: one primary, one positive, and a small set of accents.
+COLORS = ["#ff7a45", "#35c6a1", "#7b8cff", "#e8bb51", "#d86b8a", "#6fb6cc", "#a9a5ff"]
+PLOT_CONFIG = {"displayModeBar": False, "responsive": True}
 
 
 # ── Fetch Repo List ───────────────────────────────────────────────────────────
@@ -262,12 +503,16 @@ repo_count = len(repos)
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="dashboard-header">
+    <div style="font-size:0.65rem; letter-spacing:0.14em; text-transform:uppercase; color:#ff7a45; font-weight:650; margin-bottom:0.85rem;">
+        Open-source intelligence
+    </div>
     <h1>GitHub Repository Analytics</h1>
-    <p>Interactive analytics from {repo_count} open-source repositories · Data refreshed daily</p>
+    <p>Portfolio health, delivery velocity, and contributor activity across {repo_count} repositories.</p>
     <div class="header-badges">
         <span class="header-badge badge-duckdb">DuckDB</span>
         <span class="header-badge badge-airflow">Airflow</span>
         <span class="header-badge badge-dbt">dbt</span>
+        <span style="color:#5d6875; font-size:0.68rem; align-self:center; margin-left:0.3rem;">Updated daily</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -284,11 +529,10 @@ with st.sidebar:
     repo_filter = None if selected_repo == "All Repositories" else selected_repo
 
     st.divider()
-    st.markdown("### About")
+    st.markdown("### Data layer")
     st.caption(
-        "Queries pre-aggregated KPI Parquet files "
-        "exported from Databricks Unity Catalog to S3. "
-        "DuckDB provides sub-second query latency."
+        "Pre-aggregated KPI Parquet files exported from Databricks Unity Catalog to S3. "
+        "DuckDB keeps the dashboard responsive."
     )
 
 
@@ -296,6 +540,11 @@ with st.sidebar:
 def short_name(full_name: str) -> str:
     """apache/spark → spark"""
     return full_name.split("/")[-1] if "/" in str(full_name) else str(full_name)
+
+
+def section_header(label: str) -> None:
+    """Render a low-noise section label that works with the dark theme."""
+    st.markdown(f'<div class="section-header">{label}</div>', unsafe_allow_html=True)
 
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
@@ -317,6 +566,7 @@ with tab_overview:
     if df_health is None or df_health.empty:
         st.info("No data available for this filter.")
     else:
+        section_header("Portfolio snapshot")
         total_issues = int(df_health["total_issues"].sum())
         open_issues = int(df_health["open_issues"].sum())
         total_prs = int(df_health["total_prs"].sum())
@@ -338,7 +588,7 @@ with tab_overview:
         c7.metric("Community Members", f"{total_contribs:,}")
         c8.metric("Repositories", f"{len(df_health):,}")
 
-        st.markdown("")
+        section_header("Repository workload")
 
         # Prepare short names for charts
         df_health = df_health.copy()
@@ -352,14 +602,14 @@ with tab_overview:
                 name="Closed",
                 x=df_health["short_name"],
                 y=df_health["total_issues"] - df_health["open_issues"],
-                marker_color="#6366f1",
+                marker_color="#7b8cff",
                 marker_line_width=0,
             ))
             fig_issues.add_trace(go.Bar(
                 name="Open",
                 x=df_health["short_name"],
                 y=df_health["open_issues"],
-                marker_color="#f43f5e",
+                marker_color="#d86b8a",
                 marker_line_width=0,
             ))
             fig_issues.update_layout(
@@ -369,8 +619,8 @@ with tab_overview:
                 xaxis_title="",
                 yaxis_title="",
             )
-            fig_issues.update_layout(legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
-            st.plotly_chart(fig_issues, use_container_width=True)
+            fig_issues.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+            st.plotly_chart(fig_issues, use_container_width=True, config=PLOT_CONFIG)
 
         with col_right:
             fig_prs = go.Figure()
@@ -378,14 +628,14 @@ with tab_overview:
                 name="Merged / Closed",
                 x=df_health["short_name"],
                 y=df_health["total_prs"] - df_health["open_prs"],
-                marker_color="#8b5cf6",
+                marker_color="#ff7a45",
                 marker_line_width=0,
             ))
             fig_prs.add_trace(go.Bar(
                 name="Open",
                 x=df_health["short_name"],
                 y=df_health["open_prs"],
-                marker_color="#f59e0b",
+                marker_color="#e8bb51",
                 marker_line_width=0,
             ))
             fig_prs.update_layout(
@@ -395,8 +645,8 @@ with tab_overview:
                 xaxis_title="",
                 yaxis_title="",
             )
-            fig_prs.update_layout(legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
-            st.plotly_chart(fig_prs, use_container_width=True)
+            fig_prs.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+            st.plotly_chart(fig_prs, use_container_width=True, config=PLOT_CONFIG)
 
         # Contributors bar chart
         fig_contrib = px.bar(
@@ -404,7 +654,7 @@ with tab_overview:
             x="approximate_total_contributors",
             y="short_name",
             orientation="h",
-            color_discrete_sequence=["#14b8a6"],
+            color_discrete_sequence=["#35c6a1"],
             title="Community Members per Repository",
         )
         fig_contrib.update_layout(
@@ -413,7 +663,7 @@ with tab_overview:
             yaxis_title="",
             height=350,
         )
-        st.plotly_chart(fig_contrib, use_container_width=True)
+        st.plotly_chart(fig_contrib, use_container_width=True, config=PLOT_CONFIG)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -435,6 +685,7 @@ with tab_trends:
         if df_ts_active.empty:
             st.info("No active months found in the data.")
         else:
+            section_header("Delivery activity")
             if not repo_filter:
                 df_agg = df_ts_active.groupby("month_year", as_index=False).agg({
                     "issues_opened": "sum",
@@ -462,18 +713,18 @@ with tab_trends:
                 fig_i.add_trace(go.Scatter(
                     x=df_agg["month_year"], y=df_agg["issues_opened"],
                     name="Opened", mode="lines+markers",
-                    line=dict(color="#6366f1", width=2.5),
+                    line=dict(color="#ff7a45", width=2.5),
                     marker=dict(size=5),
                     fill="tozeroy",
-                    fillcolor="rgba(99,102,241,0.08)",
+                    fillcolor="rgba(255,122,69,0.08)",
                 ))
                 fig_i.add_trace(go.Scatter(
                     x=df_agg["month_year"], y=df_agg["issues_closed"],
                     name="Closed", mode="lines+markers",
-                    line=dict(color="#14b8a6", width=2.5),
+                    line=dict(color="#35c6a1", width=2.5),
                     marker=dict(size=5),
                     fill="tozeroy",
-                    fillcolor="rgba(20,184,166,0.08)",
+                    fillcolor="rgba(53,198,161,0.08)",
                 ))
                 fig_i.update_layout(
                     **PLOTLY_LAYOUT,
@@ -482,26 +733,26 @@ with tab_trends:
                     yaxis_title="",
                     hovermode="x unified",
                 )
-                fig_i.update_layout(legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
-                st.plotly_chart(fig_i, use_container_width=True)
+                fig_i.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+                st.plotly_chart(fig_i, use_container_width=True, config=PLOT_CONFIG)
 
             with col_r:
                 fig_p = go.Figure()
                 fig_p.add_trace(go.Scatter(
                     x=df_agg["month_year"], y=df_agg["prs_opened"],
                     name="Opened", mode="lines+markers",
-                    line=dict(color="#8b5cf6", width=2.5),
+                    line=dict(color="#7b8cff", width=2.5),
                     marker=dict(size=5),
                     fill="tozeroy",
-                    fillcolor="rgba(139,92,246,0.08)",
+                    fillcolor="rgba(123,140,255,0.08)",
                 ))
                 fig_p.add_trace(go.Scatter(
                     x=df_agg["month_year"], y=df_agg["prs_merged"],
                     name="Merged", mode="lines+markers",
-                    line=dict(color="#f59e0b", width=2.5),
+                    line=dict(color="#e8bb51", width=2.5),
                     marker=dict(size=5),
                     fill="tozeroy",
-                    fillcolor="rgba(245,158,11,0.08)",
+                    fillcolor="rgba(232,187,81,0.08)",
                 ))
                 fig_p.update_layout(
                     **PLOTLY_LAYOUT,
@@ -510,8 +761,8 @@ with tab_trends:
                     yaxis_title="",
                     hovermode="x unified",
                 )
-                fig_p.update_layout(legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
-                st.plotly_chart(fig_p, use_container_width=True)
+                fig_p.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+                st.plotly_chart(fig_p, use_container_width=True, config=PLOT_CONFIG)
 
             # Per-repo breakdown
             if not repo_filter and len(df_ts_active["repo_name"].unique()) > 1:
@@ -531,8 +782,8 @@ with tab_trends:
                     legend_title_text="",
                     height=400,
                 )
-                fig_repo.update_layout(legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
-                st.plotly_chart(fig_repo, use_container_width=True)
+                fig_repo.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+                st.plotly_chart(fig_repo, use_container_width=True, config=PLOT_CONFIG)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -544,6 +795,7 @@ with tab_prs:
     if df_pr is None or getattr(df_pr, "empty", True):
         st.info("No PR data available.")
     else:
+        section_header("Change complexity")
         merged_prs = df_pr[df_pr["merged_date_key"].notna()]
         avg_merge_hrs = merged_prs["time_to_merge_hours"].median()
 
@@ -559,7 +811,7 @@ with tab_prs:
 
         with col_l:
             size_order = ["Small", "Medium", "Large", "XL", "Unknown"]
-            size_colors = {"Small": "#14b8a6", "Medium": "#6366f1", "Large": "#f59e0b", "XL": "#f43f5e", "Unknown": "#475569"}
+            size_colors = {"Small": "#35c6a1", "Medium": "#7b8cff", "Large": "#e8bb51", "XL": "#d86b8a", "Unknown": "#5d6875"}
             size_counts = df_pr["pr_size_bucket"].value_counts().reindex(size_order, fill_value=0)
 
             fig_size = go.Figure(data=[go.Pie(
@@ -569,7 +821,7 @@ with tab_prs:
                 marker=dict(colors=[size_colors.get(s, "#475569") for s in size_counts.index]),
                 textinfo="percent+label",
                 textposition="outside",
-                textfont=dict(size=11, color="#e2e8f0"),
+                textfont=dict(size=11, color="#edf1f3"),
                 pull=[0.02] * len(size_counts),
             )])
             fig_size.update_layout(
@@ -578,7 +830,7 @@ with tab_prs:
                 showlegend=False,
                 height=420,
             )
-            st.plotly_chart(fig_size, use_container_width=True)
+            st.plotly_chart(fig_size, use_container_width=True, config=PLOT_CONFIG)
 
         with col_r:
             scatter_data = merged_prs[merged_prs["time_to_merge_hours"].notna()].copy()
@@ -604,9 +856,9 @@ with tab_prs:
                     legend_title_text="",
                     height=420,
                 )
-                fig_scatter.update_layout(legend=dict(orientation="h", y=1.12, x=0.5, xanchor="center", font=dict(size=11, color="#94a3b8"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
+                fig_scatter.update_layout(legend=dict(orientation="h", y=-0.25, x=0.5, xanchor="center", font=dict(size=11, color="#8d98a5"), bgcolor="rgba(0,0,0,0)", borderwidth=0))
                 fig_scatter.update_traces(marker=dict(size=5, line=dict(width=0)))
-                st.plotly_chart(fig_scatter, use_container_width=True)
+                st.plotly_chart(fig_scatter, use_container_width=True, config=PLOT_CONFIG)
             else:
                 st.info("Not enough merged PR data for scatter plot.")
 
@@ -616,7 +868,7 @@ with tab_prs:
             x="changed_files",
             nbins=40,
             title="Files Changed per PR (Distribution)",
-            color_discrete_sequence=["#6366f1"],
+            color_discrete_sequence=["#ff7a45"],
         )
         fig_files.update_layout(
             **PLOTLY_LAYOUT,
@@ -625,7 +877,7 @@ with tab_prs:
             bargap=0.05,
             height=350,
         )
-        st.plotly_chart(fig_files, use_container_width=True)
+        st.plotly_chart(fig_files, use_container_width=True, config=PLOT_CONFIG)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -637,6 +889,7 @@ with tab_community:
     if df_users is None or getattr(df_users, "empty", True):
         st.info("No contribution data available.")
     else:
+        section_header("Contributor overview")
         uc1, uc2, uc3, uc4 = st.columns(4)
         uc1.metric("Unique Members", f"{df_users['user_id'].nunique():,}")
         uc2.metric("PRs Merged", f"{int(df_users['total_prs_merged'].sum()):,}")
@@ -681,7 +934,7 @@ with tab_community:
                 x="total_prs_merged",
                 y="label",
                 orientation="h",
-                color_discrete_sequence=["#8b5cf6"],
+                color_discrete_sequence=["#7b8cff"],
                 title="Top 10 · PRs Merged",
             )
             fig_top_pr.update_layout(
@@ -691,7 +944,7 @@ with tab_community:
                 height=400,
             )
             fig_top_pr.update_layout(yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig_top_pr, use_container_width=True)
+            st.plotly_chart(fig_top_pr, use_container_width=True, config=PLOT_CONFIG)
 
         with col_r:
             top_adds = df_users.nlargest(10, "total_additions").copy()
@@ -704,7 +957,7 @@ with tab_community:
                 x="total_additions",
                 y="label",
                 orientation="h",
-                color_discrete_sequence=["#14b8a6"],
+                color_discrete_sequence=["#35c6a1"],
                 title="Top 10 · Lines Added",
             )
             fig_top_adds.update_layout(
@@ -714,7 +967,7 @@ with tab_community:
                 height=400,
             )
             fig_top_adds.update_layout(yaxis=dict(autorange="reversed"))
-            st.plotly_chart(fig_top_adds, use_container_width=True)
+            st.plotly_chart(fig_top_adds, use_container_width=True, config=PLOT_CONFIG)
 
 
 # ── Footer ───────────────────────────────────────────────────────────────────
