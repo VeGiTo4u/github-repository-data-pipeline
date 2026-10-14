@@ -14,7 +14,7 @@ The pipeline uses a multi-hop (Medallion) architecture implemented via dbt:
 
 ### Key Design Decisions
 *   **Accumulating Snapshot Fact Tables**: Instead of tracking every event (opened, merged, closed) as separate rows, `fact_issues` and `fact_pull_requests` maintain a single row per entity that updates as it progresses through its lifecycle. This makes aggregations like "time to merge" drastically simpler.
-*   **Point-in-Time Joins (Observation-Time SCD2)**: Fact tables join to `dim_repositories` (a Type 2 SCD) using the event's `created_at` timestamp against the repository's `valid_from` and `valid_to` windows. These windows represent successive pipeline observation snapshots — not a complete reconstruction of GitHub's historical metadata. Facts are linked to the latest available observed repository state covering the event timestamp.
+*   **Current-State Joins**: Fact tables join to `dim_repositories_current` (the current-state slice of the SCD2 dimension) via a simple equi-join on `repository_id`. The full SCD2 history is retained in `dim_repositories` for analytical queries that need it. This approach keeps fact-dimension joins simple while still preserving historical repository metadata. These joins associate facts with the latest observed repository state — not a complete reconstruction of GitHub's historical metadata.
 *   **Data Quality Quarantining**: Bad data is flagged and quarantined in Silver, guaranteeing that the Gold presentation layer only serves trustworthy, clean data.
 *   **End-to-End Lineage Tracking**: Every layer retains ingestion timestamps (`_bronze_ingest_ts`, `_gold_update_ts`) and the unique `_extraction_run_id`. This allows precise auditing of when a specific data point was ingested from the API and transformed into Gold.
 *   **GraphQL Code-Level Enrichment**: While core issues and pull requests come from the REST API, `fact_pull_requests` is heavily enriched with code-level details (additions, deletions, changed files) extracted via batched GraphQL queries.
@@ -27,12 +27,21 @@ The pipeline uses a multi-hop (Medallion) architecture implemented via dbt:
 The Gold layer is designed for ease of use in Business Intelligence tools.
 
 ### `dim_repositories` (Type 2 SCD Dimension)
-*   **Description**: Tracks the historical metadata of GitHub repositories (e.g., stars, forks, descriptions).
+*   **Description**: Tracks the historical metadata of GitHub repositories (e.g., stars, forks, descriptions). Preserves full history of observed changes.
 *   **Grain**: One row per repository per historical state (determined by snapshot).
 *   **Key Columns**:
-    *   `repository_sk`: Surrogate key (Primary).
+    *   `repository_sk`: Surrogate key (`dbt_scd_id`).
     *   `repo_id`: Natural key from GitHub.
     *   `valid_from`, `valid_to`: Defines the active period of this specific state.
+    *   `is_current`: Boolean indicating the current active record.
+
+### `dim_repositories_current` (Current-State Repository Dimension)
+*   **Description**: The current active state of each repository (`dbt_valid_to IS NULL`). Fact tables join to this table on `repository_id` for stable identity resolution.
+*   **Grain**: One row per unique repository.
+*   **Key Columns**:
+    *   `repository_sk`: Surrogate key (MD5 of `repo_id`).
+    *   `repo_id`: Natural key from GitHub.
+    *   `repo_name`, `owner_login`, `primary_language`, `license_name`.
 
 ### `dim_users` (Type 1 Dimension)
 *   **Description**: Details about GitHub users who author issues, PRs, or releases. Overwritten with the latest state (no history tracking).
@@ -54,7 +63,7 @@ The Gold layer is designed for ease of use in Business Intelligence tools.
     *   Which repositories have the highest issue engagement (comments)?
 *   **Key Columns**:
     *   `issue_sk`: Surrogate key (Primary).
-    *   `repository_sk`: Foreign key to the repository's point-in-time state.
+    *   `repository_sk`: Foreign key to the current repository state (`dim_repositories_current`).
     *   `author_user_sk`: Foreign key to the user who opened the issue.
     *   `created_date_key`, `closed_date_key`: Foreign keys to `dim_date`.
     *   `state`: Current state of the issue (open, closed).
@@ -87,6 +96,7 @@ The Gold layer is designed for ease of use in Business Intelligence tools.
     *   Who is publishing the most releases?
 *   **Key Columns**:
     *   `release_sk`: Surrogate key (Primary).
+    *   `repository_sk`: Foreign key to the current repository state (`dim_repositories_current`).
     *   `author_user_sk`: Foreign key to the user publishing the release.
 
 ---
@@ -95,11 +105,11 @@ The Gold layer is designed for ease of use in Business Intelligence tools.
 
 The Silver layer provides current-state representations and historical snapshots. It is useful for data science and ad-hoc analytics that require raw forms but with quality guarantees.
 
-*   **`repositories_current`**: Current-state view of repositories (SCD2 where `dbt_valid_to` is null).
-*   **`issues_current`**: Current-state view of issues, explicitly filtering out PRs (`is_pull_request = false`).
-*   **`pull_requests_current`**: Current-state view of pull requests.
-*   **`releases`**: All releases (no SCD2 required).
-*   **`languages`**: Unpivoted programming languages per repository, showing the breakdown of code bytes by language.
+*   **`repositories_current`**: Current-state view of repositories (clean snapshot records where `dbt_valid_to IS NULL` UNION ALL quarantined intermediate records).
+*   **`issues_current`**: Current-state view of issues, explicitly filtering out PRs (`is_pull_request = false`, clean snapshot records UNION ALL quarantined intermediate records).
+*   **`pull_requests_current`**: Current-state view of pull requests (clean snapshot records UNION ALL quarantined intermediate records).
+*   **`releases`**: Curated releases table (clean incremental records UNION ALL quarantined intermediate records).
+*   **`languages`**: Current unpivoted programming languages per repository, showing the breakdown of code bytes by language.
 
 **Quality Columns** (Present on all Silver models):
 *   `is_quarantined` (boolean): Flags records that failed one or more Data Quality rules.

@@ -72,27 +72,25 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Idempotency:** Re-runs for a given date replace the data at the S3 location (via partition overwrite or `replaceWhere` in Databricks) rather than duplicating rows.
 - **Data Organization:** "Organize by how you query, not by how you ingest." The S3 `raw/` prefix is partitioned by resource type and date (`raw/{resource_type}/ingestion_date=.../{repo}.json`), making downstream scanning highly efficient.
 - **Rate Limit Budgeting:** GitHub API rate limits (5,000 req/hr) are a hard constraint. The pipeline uses cooperative throttling in the `GitHubClient`, Airflow Dynamic Task Mapping concurrency limits (`max_active_tasks=3`), and per-repo watermark tracking to survive API exhaustion and resume cleanly.
-- **Streaming Extraction:** `GitHubClient.get()` is a generator that yields records one at a time (100 records per API page). The extractor streams these directly into multipart S3 uploads via `boto3`, so memory footprint is exactly 1 page regardless of repo size and no local disk tempfiles are needed.
+- **Streaming Extraction:** `GitHubClient.get()` is a generator that yields records one at a time (100 records per API page). The extractor buffers these into 5,000-record chunks and writes each chunk to S3 as a separate `put_object()` call via `boto3`, so memory footprint is approximately one chunk at a time and no local disk tempfiles are needed.
 - **Idempotent Watermarks:** `since` parameters (watermarks) only advance *after* raw data successfully lands in the Databricks Bronze layer, avoiding data loss if the ingest/load job crashes midway.
 - **Watermark Overlap:** API timestamp queries use a 10-minute overlap window to gracefully capture delayed replica syncs from GitHub's eventual consistency. Each parallel task reads/writes only its own Variable, eliminating read-modify-write race conditions.
 - **Security:** Credentials must never be hardcoded or logged. Use Airflow Connections/Variables in production, and a `.env` file strictly for local development testing. IAM policies are explicitly least-privilege but must include `s3:DeleteObject` to allow Airflow to purge failed parts on retry for idempotency.
 
 **Bronze Layer (Medallion Architecture):**
-- **Metadata-Driven:** All 5 resource types (repositories, issues, pull_requests, releases, languages) are defined in `BRONZE_REGISTRY` (`databricks/bronze/bronze_config.py`). Adding a new resource = one config entry, zero code changes.
+- **Metadata-Driven:** All 6 resource types (repositories, issues, pull_requests, releases, languages, pr_details) are defined in `BRONZE_REGISTRY` (`databricks/bronze/bronze_config.py`). Adding a new resource = one config entry, zero code changes.
 - **No Business Logic in Bronze:** Bronze is a faithful landing zone. No DQ checks, no transformations, no filtering. Data Quality walls belong at Silver and Gold only.
-- **Audit Lineage Columns:** Every Bronze row carries `_bronze_ingest_ts`, `_source_file`, `_raw_s3_uri`, `_extraction_run_id`, `_ingestion_date`, `_payload_checksum`.
-- **External Tables:** Bronze tables are registered as Unity Catalog external tables with explicit `LOCATION` clauses pointing at S3 `bronze/` prefixes. Never use managed tables.
+- **Audit Lineage Columns:** Every Bronze row carries `_bronze_ingest_ts`, `_source_file`, `_raw_s3_uri`, `_source_endpoint`, `_ingestion_timestamp`, `_extraction_run_id`, `_ingestion_date`, `_payload_checksum`, `_repo_full_name`, and `data` (the raw JSON payload).
 
 **Silver Layer (Medallion Architecture):**
 - **Pipeline Flow:** Staging (views) → Intermediate (validation/incrementality) → Snapshots (SCD2 history) → Silver Marts (presentation).
 - **Data Quality Framework:** A centralized macro (`evaluate_dq_rules`) applies rule checks in the `intermediate` layer. It generates `dq_failed_rules` (array) and `is_quarantined` (boolean).
 - **Quarantine Handling:** Bad records (`is_quarantined = true`) are strictly blocked from entering the SCD2 `silver_snapshots`. However, the final `silver_*_current` marts perform a `UNION ALL` of clean snapshot rows and quarantined intermediate rows so analysts can see the bad data without corrupting the historical tracking.
 - **Staging Simplicity:** Staging models are purely lightweight `VIEW`s (JSON flattening, typecasting). All incremental high-water-mark logic lives in the `intermediate` layer.
-- **External Tables:** Silver marts are also registered as Unity Catalog external tables via a dbt `post-hook` macro (`create_silver_external_table.sql`).
 
 **Gold Layer (Medallion Architecture):**
-- **Star Schema:** Dimensions (`dim_`) use Type 1 full-refresh `table` materializations. Facts (`fact_`) use `incremental` materialization with `unique_key` to support Delta `MERGE` (Accumulating Snapshot pattern).
-- **Data Quality Barrier:** Gold models MUST select only from clean Silver snapshots (`where dbt_valid_to is null`). They must never read from the `silver_*_current` views, which contain quarantined records.
+- **Star Schema:** `dim_repositories` is a Type 2 SCD dimension (preserves historical snapshots with `valid_from`/`valid_to`). `dim_repositories_current` and `dim_users` use Type 1 full-refresh `table` materializations. Facts (`fact_issues`, `fact_pull_requests`) use `incremental` materialization with `unique_key` to support Delta `MERGE` (Accumulating Snapshot pattern). `fact_releases` is `incremental` but represents a Transactional Fact.
+- **Data Quality Barrier:** Gold models select from clean Silver snapshots (`where dbt_valid_to is null`) for `fact_issues` and `fact_pull_requests`. `dim_users` and `fact_releases` read from Silver `_current` views/tables but explicitly filter `where is_quarantined = false` to exclude quarantined records.
 - **Custom Schema Generation:** Gold tables are forced into the `gold` schema using a custom `generate_schema_name.sql` macro to override dbt's default behavior of appending `_gold` to the target schema.
 
 **Databricks Serverless Constraints (MUST follow):**
@@ -116,7 +114,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **Consequence:** Your Silver SCD2 (`silver_snapshots`) will show that issue/PR as active/open forever. Acknowledge this limitation in downstream dashboards, or schedule periodic full-refresh reconciliations.
 
 **S3 Streaming & Watermark Integrity:**
-- Records are streamed directly to S3 via `boto3` — there are no local temporary files. Ensure S3 multi-part uploads are properly handled on failure to prevent incomplete parts from lingering.
+- Records are written to S3 in 5,000-record chunks via `put_object()` calls — there are no local temporary files. Before each extraction, existing objects in the S3 prefix are purged via `s3:DeleteObject` to ensure idempotent retries.
 - The extraction boundary timestamp is captured *before* extraction begins and committed as the watermark only *after* Bronze loading succeeds. This ensures the watermark represents the actual source data boundary, not the time of a later task.
 - Never advance watermarks before downstream processing (Bronze) has confirmed success. A failed Bronze load must not result in skipped data on the next run.
 

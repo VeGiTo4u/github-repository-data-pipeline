@@ -34,8 +34,8 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 3. S3 Folder Architecture
 
-**Decision:** S3 `raw/` is organized by resource type and date, with the repository slug as the filename.
-`raw/{resource_type}/ingestion_date={YYYY-MM-DD}/{repo_slug}.json`
+**Decision:** S3 `raw/` is organized by resource type and date, with the repository slug as a prefix containing 5,000-record part files.
+`raw/{resource_type}/ingestion_date={YYYY-MM-DD}/{repo_slug}/part_001.json`
 
 **Reason:** 
 - **Organize by query pattern:** Downstream Bronze tables query by resource type (e.g., `SELECT * FROM bronze.issues`). This layout allows a single prefix scan.
@@ -49,7 +49,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 4. Multi-Repo Scaling & Concurrency (Dynamic Task Mapping)
 
-**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is approximately one API page (~100 records) at a time regardless of total result size. The extractor streams these directly into S3 multipart uploads via `boto3`, completely bypassing the local file system.
+**Decision:** Use Airflow's Dynamic Task Mapping (`expand`) with `max_active_tasks=3` to process repositories in parallel, using a single GitHub PAT (5,000 req/hr). The `GitHubClient.get()` method uses a generator pattern (`yield`) to stream records one at a time — memory footprint is approximately one API page (~100 records) at a time regardless of total result size. The extractor buffers these into 5,000-record chunks and writes each chunk to S3 as a separate `put_object()` call via `boto3`, completely bypassing the local file system.
 
 **Reason:** 
 - A serial loop would take too long for large backfills. Unbounded parallel tasks would instantly exhaust the GitHub API rate limit.
@@ -175,7 +175,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 13. Silver Layer Orchestration via dbt
 
-**Decision:** The Silver layer models are orchestrated directly within the Airflow DAG using a `BashOperator` running `dbt build`, forming a complete end-to-end dependency chain: `extract_repo >> run_bronze_load >> dbt_build`.
+**Decision:** The Silver layer models are orchestrated directly within the Airflow DAG using a `BashOperator` running `dbt build`, forming a complete end-to-end dependency chain: `extract_repos >> run_bronze >> advance_watermarks >> dbt_build >> export_kpis`.
 
 **Reason:**
 - Unifies the entire data pipeline (Extract -> Land -> Transform) into a single orchestration graph, providing a single pane of glass for monitoring and troubleshooting.
@@ -190,7 +190,7 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 ## 14. Gold Layer (Presentation) Architecture
 
-**Decision:** The Gold layer uses a Kimball-style star schema. Dimension tables (`dim_*`) are materialized as full-refresh `table`s (Type 1 overwrites). Fact tables (`fact_*`) are materialized as `incremental` with a `unique_key` to enable Delta `MERGE` (Accumulating Snapshot pattern).
+**Decision:** The Gold layer uses a Kimball-style star schema. Dimension tables (`dim_*`) are materialized as full-refresh `table`s. `dim_repositories` is a Type 2 SCD (preserving historical snapshots with `valid_from`/`valid_to`), while `dim_repositories_current` and `dim_users` are Type 1 overwrites. Fact tables for issues and PRs (`fact_issues`, `fact_pull_requests`) are materialized as `incremental` with a `unique_key` to enable Delta `MERGE` (Accumulating Snapshot pattern). `fact_releases` is also `incremental` but represents a Transactional Fact (one immutable row per release).
 
 **Reason:**
 - **Accumulating Snapshots:** GitHub events (Issues, PRs) have multiple lifecycle stages (opened, merged, closed). Instead of a transactional fact table appending every state change, an accumulating snapshot incrementally updates a single row per entity as it progresses, making downstream BI queries significantly simpler and faster.
@@ -199,10 +199,10 @@ This document tracks the core design decisions for the GitHub Repository Data An
 
 **Alternatives Discussed:**
 - **Transactional Fact Tables:** Rejected because tracking every GitHub event state change as an immutable ledger makes BI aggregations (e.g., "time to merge") extremely complex to write.
-- **SCD2 Dimensions in Gold (Observation-Time):** We implemented Type 2 SCD tracking for `dim_repositories` based on a `valid_from` and `valid_to` snapshot strategy. Fact tables (`fact_issues` and `fact_pull_requests`) perform **Point-in-Time Joins** against the `dim_repositories` table. These joins associate facts with the latest available observed repository state covering the event timestamp. This should not be interpreted as a complete reconstruction of GitHub's historical metadata — it represents repository states as observed by successive pipeline snapshots.
+- **SCD2 Dimensions in Gold (Observation-Time):** We implemented Type 2 SCD tracking for `dim_repositories` based on a `valid_from` and `valid_to` snapshot strategy, preserving the full history of observed repository states. Fact tables (`fact_issues` and `fact_pull_requests`) join against `dim_repositories_current` (the current-state slice, where `dbt_valid_to IS NULL`) via a simple equi-join on `repository_id`. This provides stable identity resolution without the complexity of point-in-time window joins. The full SCD2 history in `dim_repositories` is available for analytical queries that need it. This should not be interpreted as a complete reconstruction of GitHub's historical metadata — it represents repository states as observed by successive pipeline snapshots.
 
 ## 15. S3 Streaming Extraction & Watermark Semantics
-**Decision:** Records are streamed directly from the GitHub API generator into S3 multipart uploads via `boto3` — no local temporary files are used. The extraction boundary timestamp is captured *before* extraction begins and committed as the watermark only *after* Bronze loading succeeds.
+**Decision:** Records are streamed from the GitHub API generator into 5,000-record chunks, then each chunk is written to S3 as a separate `put_object()` call via `boto3` — no local temporary files are used. The extraction boundary timestamp is captured *before* extraction begins and committed as the watermark only *after* Bronze loading succeeds.
 **Reason:**
 - Eliminates local disk as a failure point and reduces container storage requirements.
 - Capturing the extraction boundary at the start of extraction (not at watermark commit time) ensures the watermark accurately represents the source data boundary, preventing gaps when combined with the 10-minute safety overlap window.

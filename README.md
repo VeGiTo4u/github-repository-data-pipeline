@@ -54,9 +54,9 @@ This project implements an end-to-end production-oriented Data Engineering pipel
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Orchestration** | Apache Airflow 2.10 (Docker) | DAG scheduling, Dynamic Task Mapping, retry logic |
+| **Orchestration** | Apache Airflow 2.10.5 (Docker) | DAG scheduling, Dynamic Task Mapping, retry logic |
 | **Ingestion** | Python (requests, boto3) | GitHub REST API + GraphQL extraction |
-| **Storage** | Amazon S3 | Raw (NDJSON) + Bronze/Silver/Gold (Delta) + Exports (Parquet) |
+| **Storage** | Amazon S3 | Raw (NDJSON part files) + Bronze/Silver/Gold (Delta) + Exports (Parquet) |
 | **Processing** | Databricks (Serverless, Unity Catalog) | Bronze Delta table loading via PySpark |
 | **Transformation** | dbt (dbt-databricks adapter) | Staging → Intermediate → Silver → Gold modeling |
 | **Presentation** | Streamlit + Plotly | Interactive analytics dashboard |
@@ -94,7 +94,7 @@ The pipeline implements a **Kimball-style star schema** in the Gold layer, fed b
 
 | Table | Description | Key Metrics |
 |---|---|---|
-| `kpi_repo_health` | Per-repo health snapshot | Total/open issues & PRs, median close/merge times, contributor count |
+| `kpi_repo_health` | Per-repo health snapshot | Total/open issues & PRs, median close/merge times, approximate total contributors |
 | `kpi_time_series` | Monthly velocity metrics | Issues opened/closed, PRs opened/merged, median response times |
 | `kpi_user_contributions` | Per-user contribution leaderboard | PRs merged, issues opened, comments, lines added/deleted |
 | `kpi_pr_complexity` | PR size and review analysis | Lines changed, files changed, commits, size bucket, merge time |
@@ -147,8 +147,7 @@ github-repository-data-pipeline/
 │   ├── snapshots/                    # SCD Type 2 (issues, PRs, repositories)
 │   ├── macros/
 │   │   ├── evaluate_dq_rules.sql     # Reusable DQ quarantine macro
-│   │   ├── generate_schema_name.sql  # Custom schema routing
-│   │   └── ...
+│   │   └── generate_schema_name.sql  # Custom schema routing
 │   └── tests/                        # Singular tests for snapshot integrity
 │
 ├── streamlit_app/                    # Presentation layer
@@ -260,7 +259,7 @@ The ingestion module extracts data from the GitHub API with several production-h
 
 - **Dynamic Task Mapping**: Each repository is processed by an independent Airflow task instance, enabling parallel extraction and retry isolation at the task-instance level. Downstream Bronze processing intentionally requires the complete mapped extraction stage to succeed, forming an all-or-nothing daily batch design.
 - **Generator-Based Streaming**: `GitHubClient.get()` yields records one page at a time via Python generators, keeping memory footprint at approximately one API page (~100 records) at a time regardless of total volume. This prevents OOM on repos with 170K+ issues.
-- **Chunked S3 Uploads**: Large paginated resources (issues, PRs, releases) are streamed directly to S3 in 5,000-record part files via `stream_records_to_s3()`, avoiding the need to hold the full dataset in memory.
+- **Chunked S3 Uploads**: Large paginated resources (issues, PRs, releases) are written to S3 in 5,000-record part files via `stream_records_to_s3()`, which buffers records in memory and writes each chunk as a separate `put_object()` call. This avoids holding the full dataset in memory.
 - **Cooperative Throttling**: A tier-based system (`repo_config.py`) assigns API budget thresholds per repository size. Large repos trigger a 1-second cooperative slowdown before exhausting the shared rate limit, preventing starvation of smaller repos.
 - **Per-Repo Watermarks**: Each repository maintains its own `since` timestamp via an individual Airflow Variable, enabling independent incremental extraction with no read-modify-write races.
 - **GraphQL Batch Queries**: PR code-level details (additions, deletions, changed files) are extracted via batched GraphQL queries (15 PRs per request) with automatic fallback to individual queries when a batch contains a poisoned/deleted PR.
@@ -276,13 +275,13 @@ The ingestion module extracts data from the GitHub API with several production-h
 
 - **Staging Views**: Pure SQL views that flatten nested JSON, typecast, and deduplicate. No business logic — just structural cleanup.
 - **Intermediate Validation**: A reusable Jinja macro (`evaluate_dq_rules`) evaluates data quality rules and tags records with `is_quarantined` and `dq_failed_rules`. Quarantined records are excluded from SCD2 snapshots but remain visible in Silver marts.
-- **SCD2 Snapshots**: `dbt snapshot` tracks historical changes for repositories, issues, and PRs using a timestamp-based strategy.
+- **SCD2 Snapshots**: `dbt snapshot` tracks historical changes for repositories (using a `check` strategy on business-relevant columns like stars, forks, watchers), and for issues and PRs (using a `timestamp` strategy on `updated_at`).
 - **Current-State Views**: Silver marts provide `_current` views that UNION clean snapshot records with quarantined intermediate records for full auditability.
 
 ### Gold Layer (dbt)
 
-- **Kimball Star Schema**: Dimension tables (`dim_repositories`, `dim_users`, `dim_date`) + accumulating snapshot fact tables (`fact_issues`, `fact_pull_requests`) + transactional facts (`fact_releases`).
-- **Point-in-Time Joins**: Facts join against `dim_repositories` using the event timestamp within the dimension's SCD2 validity window.
+- **Kimball Star Schema**: Dimension tables (`dim_repositories`, `dim_repositories_current`, `dim_users`, `dim_date`) + accumulating snapshot fact tables (`fact_issues`, `fact_pull_requests`) + transactional facts (`fact_releases`).
+- **Current-State Joins**: Fact tables join against `dim_repositories_current` (the current-state slice of the SCD2 dimension) via a simple equi-join on `repository_id`. `dim_repositories` retains the full SCD2 history for analytical queries that need it.
 - **KPI Aggregations**: Pre-computed KPI tables power the dashboard without requiring complex BI-layer SQL.
 
 ### Presentation Layer
@@ -352,10 +351,10 @@ This project contains 17 documented Architecture Decision Records (ADRs) in [`do
 | 4 | Dynamic Task Mapping with `max_active_tasks=3` | Parallel repos without exhausting the 5K req/hr API budget |
 | 5 | Tier-based cooperative API throttling | Prevents large repos from starving smaller ones |
 | 6 | Per-repo scalar watermarks | Atomic writes; no read-modify-write race conditions |
-| 7 | Least-privilege IAM (no `s3:DeleteObject` for ingestion) | Protects data lake from accidental deletions |
+| 7 | Scoped `s3:DeleteObject` for raw prefix | Enables idempotent pre-write purge on retry while protecting rest of lake |
 | 9 | Metadata-driven Bronze registry | Zero-code extensibility for new resource types |
 | 11 | DQ quarantine before SCD2 snapshots | Bad data never enters historical state |
-| 14 | Accumulating snapshot facts + point-in-time dim joins | Simplifies time-to-close/merge BI queries |
+| 14 | Accumulating snapshot facts + current-state dim joins | Simplifies time-to-close/merge BI queries |
 | 16 | GraphQL batch queries with individual fallback | 15× fewer API calls; resilient to poisoned PRs |
 
 ---
