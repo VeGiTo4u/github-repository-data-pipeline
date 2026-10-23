@@ -63,4 +63,7 @@ def get_repo_list() -> list[str]:
         FROM read_parquet('{s3_path("kpi_repo_health")}')
         ORDER BY repo_name
     """)
+    if df is None or getattr(df, "empty", True) or "repo_name" not in df.columns:
+        return []
     return df["repo_name"].tolist()
+

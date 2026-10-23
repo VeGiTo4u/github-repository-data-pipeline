@@ -517,6 +517,13 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+if repo_count == 0:
+    st.warning(
+        "⚠️ **Could not load repository data from S3.**\n\n"
+        "Please check that your AWS secrets are configured in Streamlit Cloud Settings (`[aws]` with `access_key_id`, `secret_access_key`, `region`, and `s3_bucket`), "
+        "and that your IAM credentials have `s3:GetObject` and `s3:ListBucket` permissions on the export bucket."
+    )
+
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
